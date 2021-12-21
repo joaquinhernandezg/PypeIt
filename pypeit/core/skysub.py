@@ -213,6 +213,7 @@ def global_skysub(image, ivar, tilts, thismask, slit_left, slit_righ, inmask=Non
         ax.plot(skyset.breakpoints[goodbk], yfit_bkpt, color='lawngreen', marker='o', markersize=4.0, mfc='lawngreen', fillstyle='full', linestyle='None')
         ax.set_ylim((0.99*yfit.min(),1.01*yfit.max()))
         plt.show()
+        embed(header='218 of skysub')
 
     # Return
     # ToDO worth thinking about whether we want to return a mask here. It makese no sense to return outmask
@@ -637,6 +638,9 @@ def local_skysub_extract(sciimg, sciivar, tilts, waveimg, global_sky, thismask, 
     outmask : `numpy.ndarray`_
         Model maske where ``thismask`` is true.
     """
+    # TODO -- REMOVE THIS!
+    #bsp = 1.0
+
     # Check input
     if model_noise and base_var is None:
         msgs.error('Must provide base_var to iteratively update and improve the noise model.')

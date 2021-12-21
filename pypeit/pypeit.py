@@ -791,6 +791,18 @@ class PypeIt:
                 slits=self.caliBrate.slits,  # For flexure correction
                 ignore_saturation=False), frame_par['process'])
 
+        #embed(header='794 of pypeit')
+        # FAKE IT
+        #from pypeit.display import display
+        #sky_level = 50.
+        #var_sky = sky_level
+        #var_tot = var_sky + sciImg.base_var
+        # 
+        # sciImg.ivar = 1./var_tot
+
+        #rand = np.random.normal(loc=0., scale=np.sqrt(np.median(var_tot)), size=var_tot.size)
+        #sciImg.image = np.reshape(rand + sky_level, var_tot.shape)
+
         # Instantiate Reduce object
         # Required for pypeline specific object
         # At instantiaton, the fullmask in self.sciImg is modified
