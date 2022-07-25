@@ -46,9 +46,10 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
         self.meta['decker'] = dict(ext=0, dtype=str, card='APERTURE')
         self.meta['binning'] = dict(ext=0, dtype=str, card='BINNING')
         self.meta['filter1'] = dict(ext=0, dtype=str, card='FILTER')
+        self.meta['amp'] = dict(ext=0, dtype=int, card='OPAMP')
 
         # Obs
-        self.meta['mjd'] = dict(ext=0, dtype=float, card='JD') # TODO: find a way to fix this
+        self.meta['mjd'] = dict(ext=0, dtype=float, card='MJD   ') # TODO: find a way to fix this
         self.meta['airmass'] = dict(ext=0, dtype=float, card='AIRMASS')
         self.meta['exptime'] = dict(ext=0, dtype=float, card='EXPTIME')
 
@@ -77,27 +78,25 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
 
     name = 'magellan_ldss3_multi'
     supported = True
-    pypeline = 'MultiSlit'
+    pypeline = 'MultiSlit' # important for telling pypeit which pipeline to use
 
-    # TODO: fix this method
     def get_detector_par(self, det, hdu=None):
         # Detector 1
-        # TODO: change this
         detector_dict = dict(
             binning         = '1,1',
             det             = 1,
-            dataext         = 0,
-            specaxis        = 0,
+            dataext         = 0, #in which extension is the data
+            specaxis        = 0, #axis where the spectrum is located
             specflip        = False,
             spatflip        = False,
-            platescale      = 0.189,
-            darkcurr        = 0.0,
-            saturation      = 320000., #32000 for low gain, I set to a higher value to keep data in K-band
-            nonlinear       = 0.875,
+            platescale      = 0.189, # arcsec/pixel, extracted from specs docs
+            darkcurr        = 0.0, # assumed to be 0, should be corrected from Darks
+            saturation      = 320000., # ADU, abitrarly high
+            nonlinear       = 0.875, # non-linearity coefficient
             mincounts       = -1e10,
-            numamplifiers   = 1,
-            gain            = np.atleast_1d(1.5),
-            ronoise         = np.atleast_1d(6.5)
+            numamplifiers   = 2,
+            gain            = np.atleast_1d(1.5), # electrons/ADU, extracted from specs docs
+            ronoise         = np.atleast_1d(6.5) # read-out noise in electrons, extracted from specs docs
         )
         return detector_container.DetectorContainer(**detector_dict)
 
@@ -136,12 +135,6 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
         turn_off = dict(use_illumflat=False, use_biasimage=False, use_overscan=False, use_darkimage=False)
         par.reset_all_processimages_par(**turn_off)
 
-
-        # TODO: what is this????
-        par['sensfunc']['IR']['telgridfile'] \
-                = resource_filename('pypeit',
-                                    '/data/telluric/TelFit_LasCampanas_3100_26100_R20000.fits')
-
         # Good exposure times, we do not limit them
         par['calibrations']['standardframe']['exprng'] = [0, None]
         par['calibrations']['arcframe']['exprng'] = [0, None]
@@ -155,7 +148,6 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
 
         par["reduce"]["extraction"]["boxcar_radius"] = 2
         par["reduce"]["findobj"]["sig_thresh"] = 3
-
 
         return par
 
@@ -258,7 +250,6 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
         hdu = io.fits_open(raw_file)
 
         # Grab the detector or mosaic parameters
-
         det_par = self.get_detector_par(det)
 
         # Exposure time (used by RawImage)
@@ -267,7 +258,9 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
 
         image = hdu[0].data
         image = image.astype("float64")
+        # Mask defining region where data is valid. Assumed to be all
         rawdatasec_img = np.ones_like(image, dtype=int)
+        # Overscan region. No overscan in this case.
         oscansec_img = np.zeros_like(image, dtype=int)
 
         return det_par, image, hdu, exptime, rawdatasec_img, oscansec_img
