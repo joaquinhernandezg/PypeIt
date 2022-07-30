@@ -9,6 +9,7 @@ Subpackages
 
    pypeit.bspline
    pypeit.core
+   pypeit.data
    pypeit.display
    pypeit.images
    pypeit.move_median
@@ -37,6 +38,7 @@ Submodules
    pypeit.flatfield
    pypeit.fluxcalibrate
    pypeit.history
+   pypeit.inputfiles
    pypeit.io
    pypeit.manual_extract
    pypeit.masterframe

@@ -15,7 +15,7 @@ from astropy import wcs, units
 from astropy.io import fits
 from astropy.time import Time
 from astropy.coordinates import SkyCoord, EarthLocation
-
+from scipy.optimize import curve_fit
 from pypeit import msgs
 from pypeit import telescopes
 from pypeit import io
@@ -173,12 +173,14 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         self.meta['binning'] = dict(card=None, compound=True)
 
         self.meta['mjd'] = dict(ext=0, card='MJD')
-        self.meta['exptime'] = dict(ext=0, compound=True, card='ELAPTIME')
+        self.meta['exptime'] = dict(card=None, compound=True)
         self.meta['airmass'] = dict(ext=0, card='AIRMASS')
 
         # Extras for config and frametyping
         self.meta['hatch'] = dict(ext=0, card='HATNUM')
-        self.meta['idname'] = dict(ext=0, card='CALXPOS')
+#        self.meta['idname'] = dict(ext=0, card='CALXPOS')
+        self.meta['idname'] = dict(ext=0, card='IMTYPE')
+        self.meta['calpos'] = dict(ext=0, card='CALMNAM')
         self.meta['dispangle'] = dict(ext=0, card='BGRANGLE', rtol=0.01)
         self.meta['slitwid'] = dict(card=None, compound=True)
 
@@ -225,6 +227,9 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         par['calibrations']['standardframe']['process']['use_pattern'] = True
         par['scienceframe']['process']['use_pattern'] = True
 
+        # Correct the illumflat for pixel-to-pixel sensitivity variations
+        par['calibrations']['illumflatframe']['process']['use_pixelflat'] = True
+
         # Make sure the overscan is subtracted from the dark
         par['calibrations']['darkframe']['process']['use_overscan'] = True
 
@@ -246,14 +251,16 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         # Relative illumination correction
         par['calibrations']['flatfield']['slit_illum_relative'] = True  # Calculate the relative slit illumination
         par['calibrations']['flatfield']['slit_illum_ref_idx'] = 14  # The reference index - this should probably be the same for the science frame
+        par['calibrations']['flatfield']['slit_illum_smooth_npix'] = 4  # Sufficiently small value so less structure in relative weights
+        par['calibrations']['flatfield']['fit_2d_det_response'] = True  # Include the 2D detector response in the pixelflat.
 
         # Set the default exposure time ranges for the frame typing
         par['calibrations']['biasframe']['exprng'] = [None, 0.01]
         par['calibrations']['darkframe']['exprng'] = [0.01, None]
-        par['calibrations']['pinholeframe']['exprng'] = [999999, None]  # No pinhole frames
-        par['calibrations']['pixelflatframe']['exprng'] = [None, 30]
-        par['calibrations']['traceframe']['exprng'] = [None, 30]
-        par['scienceframe']['exprng'] = [30, None]
+#        par['calibrations']['pinholeframe']['exprng'] = [999999, None]  # No pinhole frames
+#        par['calibrations']['pixelflatframe']['exprng'] = [None, 30]
+#        par['calibrations']['traceframe']['exprng'] = [None, 30]
+#        par['scienceframe']['exprng'] = [30, None]
 
         # Set the number of alignments in the align frames
         par['calibrations']['alignment']['locations'] = [0.1, 0.3, 0.5, 0.7, 0.9]  # TODO:: Check this - is this accurate enough?
@@ -262,7 +269,7 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         par['scienceframe']['process']['sigclip'] = 4.0
         par['scienceframe']['process']['objlim'] = 1.5
         par['scienceframe']['process']['use_illumflat'] = True  # illumflat is applied when building the relative scale image in reduce.py, so should be applied to scienceframe too.
-        par['scienceframe']['process']['use_specillum'] = True  # apply relative spectral illumination
+        par['scienceframe']['process']['use_specillum'] = False  # apply relative spectral illumination
         par['scienceframe']['process']['spat_flexure_correct'] = False  # don't correct for spatial flexure - varying spatial illumination profile could throw this correction off. Also, there's no way to do astrometric correction if we can't correct for spatial flexure of the contbars frames
         par['scienceframe']['process']['use_biasimage'] = False
         par['scienceframe']['process']['use_darkimage'] = False
@@ -272,11 +279,15 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
 
         # Make sure that this is reduced as a slit (as opposed to fiber) spectrograph
         par['reduce']['cube']['slit_spec'] = True
+        par['reduce']['cube']['combine'] = False  # Make separate spec3d files from the input spec2d files
 
         # Sky subtraction parameters
         par['reduce']['skysub']['no_poly'] = True
         par['reduce']['skysub']['bspline_spacing'] = 0.6
-        par['reduce']['skysub']['joint_fit'] = True
+        par['reduce']['skysub']['joint_fit'] = False
+
+        # Flux calibration parameters
+        par['sensfunc']['UVIS']['extinct_correct'] = False  # This must be False - the extinction correction is performed when making the datacube
 
         return par
 
@@ -363,6 +374,17 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         """
         return ['dispname', 'decker', 'binning', 'dispangle']
 
+    def pypeit_file_keys(self):
+        """
+        Define the list of keys to be output into a standard ``PypeIt`` file.
+
+        Returns:
+            :obj:`list`: The list of keywords in the relevant
+            :class:`~pypeit.metadata.PypeItMetaData` instance to print to the
+            :ref:`pypeit_file`.
+        """
+        return super().pypeit_file_keys() + ['idname', 'calpos']
+
     def check_frame_type(self, ftype, fitstbl, exprng=None):
         """
         Check for frames of the provided type.
@@ -385,24 +407,36 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         good_exp = framematch.check_frame_exptime(fitstbl['exptime'], exprng)
         # hatch=1,0=open,closed
         if ftype == 'science':
-            return good_exp & self.lamps(fitstbl, 'off') & (fitstbl['hatch'] == '1')
+            return good_exp & (fitstbl['idname'] == 'OBJECT') & (fitstbl['calpos'] == 'Sky') \
+                    & self.lamps(fitstbl, 'off') & (fitstbl['hatch'] == '1')
         if ftype == 'bias':
-            return good_exp & self.lamps(fitstbl, 'off') & (fitstbl['hatch'] == '0')
-        if ftype in ['pixelflat']:
+            return good_exp & (fitstbl['idname'] == 'BIAS')
+        if ftype == 'pixelflat':
             # Use internal lamp
-            return good_exp & self.lamps(fitstbl, 'cont') & (fitstbl['hatch'] == '0') & (fitstbl['idname'] == '6')
+            return good_exp & (fitstbl['idname'] == 'FLATLAMP') & (fitstbl['calpos'] == 'Mirror') \
+                    & self.lamps(fitstbl, 'cont_noarc') & (fitstbl['hatch'] == '0')
         if ftype in ['illumflat', 'trace']:
             # Use dome flats
-            return good_exp & self.lamps(fitstbl, 'dome_noarc') & (fitstbl['hatch'] == '1') & (fitstbl['idname'] == '0')
-        if ftype in ['dark']:
+            return good_exp & (fitstbl['idname'] == 'DOMEFLAT') & (fitstbl['calpos'] == 'Sky') \
+                    & self.lamps(fitstbl, 'dome_noarc') & (fitstbl['hatch'] == '1')
+        if ftype == 'dark':
             # Dark frames
-            return good_exp & self.lamps(fitstbl, 'off') & (fitstbl['hatch'] == '0')
-        if ftype in ['align']:
+            return good_exp & (fitstbl['idname'] == 'DARK') & self.lamps(fitstbl, 'off') \
+                    & (fitstbl['hatch'] == '0')
+        if ftype == 'align':
             # Alignment frames
-            return good_exp & self.lamps(fitstbl, 'cont') & (fitstbl['hatch'] == '0') & ((fitstbl['idname'] == '4')|(fitstbl['idname'] == '2'))
+            # NOTE: Different from previous versions, this now only warns the user if everyth
+            is_align = good_exp & (fitstbl['idname'] == 'CONTBARS') \
+                        & (fitstbl['calpos'] == 'Mirror') & self.lamps(fitstbl, 'cont') \
+                        & (fitstbl['hatch'] == '0')
+            if np.any(is_align & np.logical_not(self.lamps(fitstbl, 'cont_noarc'))):
+                msgs.warn('Alignment frames have both the continuum and arc lamps on (although '
+                          'arc-lamp shutter might be closed)!')
+            return is_align
         if ftype in ['arc', 'tilt']:
-            return good_exp & self.lamps(fitstbl, 'arcs') & (fitstbl['hatch'] == '0')
-        if ftype in ['pinhole']:
+            return good_exp & (fitstbl['idname'] == 'ARCLAMP') & (fitstbl['calpos'] == 'Mirror') \
+                    & self.lamps(fitstbl, 'arcs') & (fitstbl['hatch'] == '0')
+        if ftype == 'pinhole':
             # Don't type pinhole frames
             return np.zeros(len(fitstbl), dtype=bool)
 
@@ -430,11 +464,8 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         """
         if status == 'off':
             # Check if all are off
-            lampstat = np.array([(fitstbl[k] == '0') | (fitstbl[k] == 'None') | (fitstbl[k] == 'off')
+            lampstat = np.array([np.isin(fitstbl[k], ['0', 'None', 'off'])
                                     for k in fitstbl.keys() if 'lampstat' in k])
-            # lampshst = np.array([(fitstbl[k] == '0') | (fitstbl[k] == 'None')
-            #                         for k in fitstbl.keys() if 'lampshst' in k])
-            # return np.all(lampstat | lampshst, axis=0)  # i.e. either the shutter is closed or the lamp is off
             return np.all(lampstat, axis=0)  # Lamp has to be off
         if status == 'arcs':
             # Check if any arc lamps are on (FeAr | ThAr)
@@ -449,16 +480,17 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
             dome_lamp_stat = np.array([fitstbl[k] == '0' for k in fitstbl.keys()
                                        if k in dome_lamps])
             return np.any(lamp_stat & lamp_shst & dome_lamp_stat, axis=0)  # i.e. lamp on and shutter open
-        if status in ['cont']:
+        if status in ['cont_noarc', 'cont']:
             # Check if any internal lamps are on (Continuum) - Ignore lampstat03 (Aux) - not sure what this is used for
             cont_lamp_stat = ['lampstat{0:02d}'.format(4)]
             lamp_stat = np.array([fitstbl[k] == '1' for k in fitstbl.keys()
                                   if k in cont_lamp_stat])
-            # Make sure arcs are off - it seems even with the shutter closed, the arcs
-            arc_lamps = ['lampstat{0:02d}'.format(i) for i in range(1, 3)]
-            arc_lamp_stat = np.array([fitstbl[k] == '0' for k in fitstbl.keys()
-                                      if k in arc_lamps])
-            lamp_stat = lamp_stat & arc_lamp_stat
+            if status == 'cont_noarc':
+                # Make sure arcs are off - it seems even with the shutter closed, the arcs
+                arc_lamps = ['lampstat{0:02d}'.format(i) for i in range(1, 3)]
+                arc_lamp_stat = np.array([fitstbl[k] == '0' for k in fitstbl.keys()
+                                        if k in arc_lamps])
+                lamp_stat = lamp_stat & arc_lamp_stat
             return np.any(lamp_stat, axis=0)  # i.e. lamp on
         if status in ['dome_noarc', 'dome']:
             # Check if any dome lamps are on (Continuum) - Ignore lampstat03 (Aux) - not sure what this is used for
@@ -589,9 +621,6 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
             elif section == 'BSEC':
                 oscansec_img = pix_img.copy()
 
-        # Calculate the pattern frequency
-        hdu = self.calc_pattern_freq(raw_img, rawdatasec_img, oscansec_img, hdu)
-
         # Return
         return detpar, raw_img, hdu, exptime, rawdatasec_img, oscansec_img
 
@@ -630,9 +659,8 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
 
         Returns
         -------
-        hdu : `astropy.io.fits.HDUList`_
-            The input HDUList, with header updated to include the frequency
-            of each amplifier.
+        patt_freqs : :obj:`list`
+            List of pattern frequencies.
         """
         msgs.info("Calculating pattern noise frequency")
 
@@ -644,6 +672,7 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         num_amps = unq_amps.size
 
         # Loop through amplifiers and calculate the frequency
+        patt_freqs = []
         for amp in unq_amps:
             # Grab the pixels where the amplifier has data
             pixs = np.where((rawdatasec_img == amp) | (oscansec_img == amp))
@@ -664,12 +693,11 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
                 frame = raw_img[cmin:cmax, rmin:rmax].astype(np.float64)
             # Calculate the pattern frequency
             freq = procimg.pattern_frequency(frame)
+            patt_freqs.append(freq)
             msgs.info("Pattern frequency of amplifier {0:d}/{1:d} = {2:f}".format(amp, num_amps, freq))
-            # Add the frequency to the zeroth header
-            hdu[0].header['PYPFRQ{0:02d}'.format(amp)] = freq
 
-        # Return the updated HDU
-        return hdu
+        # Return the list of pattern frequencies
+        return patt_freqs
 
     def bpm(self, filename, det, shape=None, msbias=None):
         """
@@ -709,11 +737,13 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         binning = head0['BINNING']
 
         # Construct a list of the bad columns
-        # Note: These were taken from v1.1.0 (REL) Date: 2018/06/11 of KDERP
+        # Note: These were taken from v1.1.0 (REL) Date: 2018/06/11 of KDERP (updated to be more conservative)
         #       KDERP store values and in the code (stage1) subtract 1 from the badcol data files.
         #       Instead of this, I have already pre-subtracted the values in the following arrays.
         bc = None
         if ampmode == 'ALL':
+            # TODO: There are several bad columns in this mode, but this is typically only used for arcs.
+            #       It's the same set of bad columns seen in the TBO and TUP amplifier modes.
             if binning == '1,1':
                 bc = [[3676, 3676, 2056, 2244]]
             elif binning == '2,2':
@@ -731,11 +761,13 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
                       [1838, 1838, 1122, 2055]]
         if ampmode == 'TUP':
             if binning == '1,1':
-                bc = [[2622, 2622, 3492, 3528],
+#                bc = [[2622, 2622, 3492, 3528],
+                bc = [[2622, 2622, 3492, 4111],   # Extending this BPM, as sometimes the bad column is larger than this.
                       [3295, 3300, 1550, 1555],
                       [3676, 3676, 1866, 4111]]
             elif binning == '2,2':
-                bc = [[1311, 1311, 1745, 1788],
+#                bc = [[1311, 1311, 1745, 1788],
+                bc = [[1311, 1311, 1745, 2055],   # Extending this BPM, as sometimes the bad column is larger than this.
                       [1646, 1650,  775,  777],
                       [1838, 1838,  933, 2055]]
         if bc is None:
@@ -816,7 +848,7 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         crota = np.radians(-(skypa + rotoff))
 
         # Calculate the fits coordinates
-        cdelt1 = -slscl#*(24/23)  # The factor (24/23) is a hack - It is introduced because the centre of 1st and 24th slices are 23 slices apart... TODO :: Need to think of a better way to deal with this
+        cdelt1 = -slscl
         cdelt2 = pxscl
         if coord is None:
             ra = 0.
@@ -831,7 +863,7 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         cd21 = -abs(cdelt1) * np.sign(cdelt2) * np.sin(crota)  # DEC degress per column
         cd22 = cdelt2 * np.cos(crota)                          # DEC degrees per row
         # Get reference pixels (set these to the middle of the FOV)
-        crpix1 = 12.   # i.e. 24 slices/2
+        crpix1 = 24/2 - 0.5   # i.e. 24 slices/2 and then -0.5 to account for the bin edge used with NGP
         crpix2 = slitlength / 2.
         crpix3 = 1.
         # Get the offset
@@ -901,4 +933,44 @@ class KeckKCWISpectrograph(spectrograph.Spectrograph):
         spec_bins = np.arange(1+num_wave) - 0.5
         return xbins, ybins, spec_bins
 
+    def fit_2d_det_response(self, det_resp, gpmask):
+        r"""
+        Perform a 2D model fit to the KCWI detector response.
+        A few different setups were inspected (BH2 & BM with different
+        grating angles), and a very similar response pattern was found for all
+        setups, indicating that this structure is something to do with
+        the detector. The starting parameters and functional form are
+        assumed to be sufficient for all setups.
 
+        Args:
+            det_resp (`numpy.ndarray`_):
+                An image of the flatfield structure.
+            gpmask (`numpy.ndarray`_):
+                Good pixel mask (True=good), the same shape as ff_struct.
+
+        Returns:
+            `numpy.ndarray`_: A model fit to the flatfield structure.
+        """
+        msgs.info("Performing a 2D fit to the detector response")
+
+        # Define a 2D sine function, which is a good description of KCWI data
+        def sinfunc2d(x, amp, scl, phase, wavelength, angle):
+            """
+            2D Sine function
+            """
+            xx, yy = x
+            angle *= np.pi / 180.0
+            return 1 + (amp + xx * scl) * np.sin(
+                2 * np.pi * (xx * np.cos(angle) + yy * np.sin(angle)) / wavelength + phase)
+
+        x = np.arange(det_resp.shape[0])
+        y = np.arange(det_resp.shape[1])
+        xx, yy = np.meshgrid(x, y, indexing='ij')
+        # Prepare the starting parameters
+        amp = 0.02  # Roughly a 2% effect
+        scale = 0.0  # Assume the amplitude is constant over the detector
+        wavelength = np.sqrt(det_resp.shape[0] ** 2 + det_resp.shape[1] ** 2) / 31.5  # 31-32 cycles of the pattern from corner to corner
+        phase, angle = 0.0, -45.34  # No phase, and a decent guess at the angle
+        p0 = [amp, scale, phase, wavelength, angle]
+        popt, pcov = curve_fit(sinfunc2d, (xx[gpmask], yy[gpmask]), det_resp[gpmask], p0=p0)
+        return sinfunc2d((xx, yy), *popt)
