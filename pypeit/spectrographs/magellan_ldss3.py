@@ -121,10 +121,7 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
         par['calibrations']['wavelengths']['sigrej_final'] = 3.0
         par['calibrations']['wavelengths']['sigrej_first'] = 3.0
 
-        par['calibrations']['wavelengths']['lamps'] = ['ArI', 'HeI', 'NeI', 'ArII']
-        par['calibrations']['wavelengths']['method'] = 'full_template'
         # make this grating dependent
-        par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_vph_blue.fits'
         par['calibrations']['wavelengths']['match_toler'] = 0.5
 
 
@@ -143,11 +140,6 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
 
         # number of detectors
         par['rdx']['detnum'] = 1
-
-        par["flexure"]["spec_method"] = "boxcar"
-
-        par["reduce"]["extraction"]["boxcar_radius"] = 2
-        par["reduce"]["findobj"]["sig_thresh"] = 3
 
         return par
 
