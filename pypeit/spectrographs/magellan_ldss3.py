@@ -294,7 +294,7 @@ def check_files_are_science(fitstbl):
     for name, mask_name, exptype in zip(object_names, mask_names, exp_types):
         data = name.split(" ")
         # if the first element is the mask name
-        if len(data) > 1 and exptype == 'Object' and data[0] == mask_name and data[1].lower() == "science":
+        if  "science" in name.lower():
             # and there is a lamp in the second element
 
             mask.append(True)
@@ -334,7 +334,7 @@ def check_files_are_pixelflat(fitstbl):
     for name, mask_name, exptype in zip(object_names, mask_names, exp_types):
         data = name.split(" ")
         # if the first element is the mask name
-        if len(data) > 1 and exptype == 'Flat' and data[0] == mask_name and data[1].lower().startswith("flat"):
+        if "flat" in name.lower():
             # and there is a lamp in the second element
 
             mask.append(True)
