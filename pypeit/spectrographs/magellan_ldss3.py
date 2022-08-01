@@ -167,7 +167,7 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
             return good_exp & (fitstbl['idname'] == 'Bias')
         if ftype in ['arc', 'tilt']:
             return good_exp & check_files_are_arc(fitstbl)
-        if ftype in ['pixelflat', 'illumflar', 'trace']:
+        if ftype in ['pixelflat', 'illumflat', 'trace']:
             return good_exp & check_files_are_pixelflat(fitstbl)
         if ftype in ['science']:
             return good_exp & check_files_are_science(fitstbl)
