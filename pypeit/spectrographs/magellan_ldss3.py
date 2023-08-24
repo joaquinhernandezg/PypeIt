@@ -7,14 +7,13 @@ import os
 from pkg_resources import resource_filename
 
 import numpy as np
+from astropy.time import Time
+from astropy.io import fits
 
-from pypeit import msgs
-from pypeit import telescopes
-import pypeit
-from pypeit.core import framematch
+from pypeit import msgs, telescopes, io
+from pypeit.core import framematch, parse
 from pypeit.spectrographs import spectrograph
 from pypeit.images import detector_container
-from pypeit import io
 
 
 class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
@@ -22,8 +21,8 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
     # DONE
     ndet = 1
     telescope = telescopes.MagellanTelescopePar()
-    camera = 'LDSS3' # TODO: change this
-    header_name = 'LDSS3-C'
+    camera = 'LDSS3-C'
+    header_name = 'LDSS3'
     comment = None
 
     # DONE
@@ -44,18 +43,61 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
         # Instrument related
         self.meta['dispname'] = dict(ext=0, dtype=str, card='GRISM')
         self.meta['decker'] = dict(ext=0, dtype=str, card='APERTURE')
-        self.meta['binning'] = dict(ext=0, dtype=str, card='BINNING')
+        self.meta['binning'] = dict(ext=0, card=None, compound=True)
         self.meta['filter1'] = dict(ext=0, dtype=str, card='FILTER')
+        #self.meta['detector'] = dict(ext=0, dtype=int, card='OPAMP')
         self.meta['amp'] = dict(ext=0, dtype=int, card='OPAMP')
 
         # Obs
-        self.meta['mjd'] = dict(ext=0, dtype=float, card='MJD   ') # TODO: find a way to fix this
+        self.meta['mjd'] = dict(ext=0, card=None, compound=True)
         self.meta['airmass'] = dict(ext=0, dtype=float, card='AIRMASS')
         self.meta['exptime'] = dict(ext=0, dtype=float, card='EXPTIME')
 
         # Extras for config and frametyping
         self.meta['idname'] = dict(ext=0, card='EXPTYPE')
         self.meta['instrument'] = dict(ext=0, card='INSTRUME')
+
+
+    def get_detector_par(self, det, hdu=None):
+
+        binning = '1,1' if hdu is None else self.get_meta_value(self.get_headarr(hdu), 'binning')
+        # Detector 1
+        detector_dict_1 = dict(
+            binning         = binning,
+            det             = 1,
+            dataext         = 0, #in which extension is the data
+            specaxis        = 0, #axis where the spectrum is located
+            specflip        = False,
+            spatflip        = False,
+            platescale      = 0.189, # arcsec/pixel, extracted from specs docs
+            darkcurr        = 0.0, # assumed to be 0, should be corrected from Darks
+            saturation      = 60000., # ADU
+            nonlinear       = 0.875, # non-linearity coefficient
+            mincounts       = -1e10,
+            numamplifiers   = 2,
+            gain            = np.atleast_1d(1.5), # electrons/ADU, extracted from specs docs
+            ronoise         = np.atleast_1d(6.5) # read-out noise in electrons, extracted from specs docs
+        )
+        '''
+        detector_dict_2 = dict(
+            binning         = binning,
+            det             = 2,
+            dataext         = 0, #in which extension is the data
+            specaxis        = 0, #axis where the spectrum is located
+            specflip        = False,
+            spatflip        = False,
+            platescale      = 0.189, # arcsec/pixel, extracted from specs docs
+            darkcurr        = 0.0, # assumed to be 0, should be corrected from Darks
+            saturation      = 60000., # ADU
+            nonlinear       = 0.875, # non-linearity coefficient
+            mincounts       = -1e10,
+            numamplifiers   = 1,
+            gain            = np.atleast_1d(1.5), # electrons/ADU, extracted from specs docs
+            ronoise         = np.atleast_1d(6.5) # read-out noise in electrons, extracted from specs docs
+        )'''
+        detectors = [detector_dict_1]#, detector_dict_2]
+        # Return
+        return detector_container.DetectorContainer(**detectors[det-1])
 
 
     def pypeit_file_keys(self):
@@ -70,35 +112,133 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
         pypeit_keys = super().pypeit_file_keys()
         # TODO: Why are these added here? See
         # pypeit.metadata.PypeItMetaData.set_pypeit_cols
-        pypeit_keys += ['calib', 'comb_id', 'bkg_id']
+        pypeit_keys += ['calib', 'comb_id', 'bkg_id', "manual"]
         return pypeit_keys
 
+    def compound_meta(self, headarr, meta_key):
+        """
+        Methods to generate metadata requiring interpretation of the header
+        data, instead of simply reading the value of a header card.
+
+        Args:
+            headarr (:obj:`list`):
+                List of `astropy.io.fits.Header`_ objects.
+            meta_key (:obj:`str`):
+                Metadata keyword to construct.
+
+        Returns:
+            object: Metadata value read from the header(s).
+        """
+        if meta_key == 'mjd':
+            time = '{:s}T{:s}'.format(headarr[0]['UT-DATE'], headarr[0]['UT-TIME'])
+            ttime = Time(time, format='isot')
+            return ttime.mjd
+        elif meta_key == 'binning':
+            binspatial, binspec = parse.parse_binning(headarr[0]['BINNING']) #1x1
+            return parse.binning2string(binspec, binspatial)
+
+    def configuration_keys(self):
+        """
+        Return the metadata keys that define a unique instrument
+        configuration.
+
+        This list is used by :class:`~pypeit.metadata.PypeItMetaData` to
+        identify the unique configurations among the list of frames read
+        for a given reduction.
+
+        Returns:
+            :obj:`list`: List of keywords of data pulled from file headers
+            and used to constuct the :class:`~pypeit.metadata.PypeItMetaData`
+            object.
+        """
+        return ['dispname', 'decker', 'binning']
+
+    def config_independent_frames(self):
+        """
+        Define frame types that are independent of the fully defined
+        instrument configuration.
+
+        Bias and dark frames are considered independent of a configuration.
+        Standards are assigned to the correct configuration frame group by
+        grism (i.e. ignoring that they are taken with a wider slit).
+        See :func:`~pypeit.metadata.PypeItMetaData.set_configurations`.
+
+        Returns:
+            :obj:`dict`: Dictionary where the keys are the frame types that
+            are configuration independent and the values are the metadata
+            keywords that can be used to assign the frames to a configuration
+            group.
+        """
+        return {'standard': 'dispname','bias': None, 'dark': None}
+
+    '''
+    def bpm(self, filename, det, shape=None, msbias=None):
+        """
+        Generate a default bad-pixel mask.
+
+        Even though they are both optional, either the precise shape for
+        the image (``shape``) or an example file that can be read to get
+        the shape (``filename`` using :func:`get_image_shape`) *must* be
+        provided.
+
+        Args:
+            filename (:obj:`str` or None):
+                An example file to use to get the image shape.
+            det (:obj:`int`):
+                1-indexed detector number to use when getting the image
+                shape from the example file.
+            shape (tuple, optional):
+                Processed image shape
+                Required if filename is None
+                Ignored if filename is not None
+            msbias (`numpy.ndarray`_, optional):
+                Master bias frame used to identify bad pixels. **This is
+                ignored for KCWI.**
+
+        Returns:
+            `numpy.ndarray`_: An integer array with a masked value set
+            to 1 and an unmasked value set to 0.  All values are set to
+            0.
+        """
+        return
+        # TODO: customize for LDSS3
+
+        # Call the base-class method to generate the empty bpm; msbias is always set to None.
+        bpm_img = super().bpm(filename, det, shape=shape, msbias=None)
+
+        # Extract some header info
+        head0 = fits.getheader(filename, ext=0)
+        binning = head0['CCDSUM']
+
+        # Construct a list of the bad columns
+        bc = []
+        if det == 1:
+            # No bad pixel columns on detector 1
+            pass
+        elif det == 2:
+            if binning == '1 1':
+                # The BPM is based on 2x2 binning data, so the 2x2 numbers are just multiplied by two
+                msgs.warn("BPM is likely over-estimated for 1x1 binning")
+                bc = [[220, 222, 3892, 4100],
+                      [952, 954, 2304, 4100]]
+            elif binning == '2 2':
+                bc = [[110, 111, 1946, 2050],
+                      [476, 477, 1154, 2050]]
+        else:
+            msgs.warn("Bad pixel mask is not available for det={0:d} binning={1:s}".format(det, binning))
+            bc = []
+
+        # Apply these bad columns to the mask
+        for bb in range(len(bc)):
+            bpm_img[bc[bb][2]:bc[bb][3] + 1, bc[bb][0]:bc[bb][1] + 1] = 1
+
+        return bpm_img'''
 
 class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
 
     name = 'magellan_ldss3_multi'
     supported = True
     pypeline = 'MultiSlit' # important for telling pypeit which pipeline to use
-
-    def get_detector_par(self, det, hdu=None):
-        # Detector 1
-        detector_dict = dict(
-            binning         = '1,1',
-            det             = 1,
-            dataext         = 0, #in which extension is the data
-            specaxis        = 0, #axis where the spectrum is located
-            specflip        = False,
-            spatflip        = False,
-            platescale      = 0.189, # arcsec/pixel, extracted from specs docs
-            darkcurr        = 0.0, # assumed to be 0, should be corrected from Darks
-            saturation      = 320000., # ADU, abitrarly high
-            nonlinear       = 0.875, # non-linearity coefficient
-            mincounts       = -1e10,
-            numamplifiers   = 2,
-            gain            = np.atleast_1d(1.5), # electrons/ADU, extracted from specs docs
-            ronoise         = np.atleast_1d(6.5) # read-out noise in electrons, extracted from specs docs
-        )
-        return detector_container.DetectorContainer(**detector_dict)
 
     @classmethod
     def default_pypeit_par(cls):
@@ -129,7 +269,7 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
         par['calibrations']['slitedges']['sobel_mode'] = 'constant'
 
         # Processing steps
-        turn_off = dict(use_illumflat=False, use_biasimage=False, use_overscan=False, use_darkimage=False)
+        turn_off = dict(use_overscan=False)
         par.reset_all_processimages_par(**turn_off)
 
         # Good exposure times, we do not limit them
@@ -163,6 +303,7 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
             exposures in ``fitstbl`` that are ``ftype`` type frames.
         """
         good_exp = framematch.check_frame_exptime(fitstbl['exptime'], exprng)
+
         if ftype in ['bias']:
             return good_exp & (fitstbl['idname'] == 'Bias')
         if ftype in ['arc', 'tilt']:
@@ -176,25 +317,6 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
         msgs.warn('Cannot determine if frames are of type {0}.'.format(ftype))
         return np.zeros(len(fitstbl), dtype=bool)
 
-    def configuration_keys(self):
-        """
-        Return the metadata keys that define a unique instrument
-        configuration.
-
-        This list is used by :class:`~pypeit.metadata.PypeItMetaData` to
-        identify the unique configurations among the list of frames read
-        for a given reduction.
-
-        Returns:
-            :obj:`list`: List of keywords of data pulled from file headers
-            and used to constuct the :class:`~pypeit.metadata.PypeItMetaData`
-            object.
-        """
-        # TODO: Based on a conversation with Carlos, we might want to
-        # include dateobs with this. For now, amp is effectively
-        # redundant because anything with the wrong amplifier used is
-        # removed from the list of valid frames in PypeItMetaData.
-        return []
 
     def get_rawimage(self, raw_file, det):
         """
@@ -252,8 +374,10 @@ class MagellanLDSS3SMultiSlitpectrograph(MagellanLDSS3Spectrograph):
         image = image.astype("float64")
         # Mask defining region where data is valid. Assumed to be all
         rawdatasec_img = np.ones_like(image, dtype=int)
+        #rawdatasec_img = np.array(2*[rawdatasec_img])
         # Overscan region. No overscan in this case.
         oscansec_img = np.zeros_like(image, dtype=int)
+        #oscansec_img = np.array(2*[oscansec_img])
 
         return det_par, image, hdu, exptime, rawdatasec_img, oscansec_img
 

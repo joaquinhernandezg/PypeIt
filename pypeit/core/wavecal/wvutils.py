@@ -57,7 +57,7 @@ def get_delta_wave(wave, wave_gpm, frac_spec_med_filter=0.03):
     is larger).
 
     Parameters
-    ---------- 
+    ----------
     wave : float `numpy.ndarray`_, shape = (nspec,)
         Array of input wavelengths. Must be 1D.
     wave_gpm : bool `numpy.ndarray`_, shape = (nspec)

@@ -90,9 +90,9 @@ class PypeIt:
         self.logname = logname
         self.verbosity = verbosity
         self.pypeit_file = pypeit_file
-        
+
         self.msgs_reset()
-        
+
         # Load up PypeIt file
         self.pypeItFile = inputfiles.PypeItFile.from_file(pypeit_file)
         self.calib_only = calib_only
@@ -122,7 +122,7 @@ class PypeIt:
 
         #   - Build the full set, merging with any user-provided
         #     parameters
-        self.par = PypeItPar.from_cfg_lines(cfg_lines=spectrograph_cfg_lines, 
+        self.par = PypeItPar.from_cfg_lines(cfg_lines=spectrograph_cfg_lines,
                                             merge_with=self.pypeItFile.cfg_lines)
         msgs.info('Built full PypeIt parameter set.')
 
@@ -137,17 +137,17 @@ class PypeIt:
         # Build the meta data
         #   - Re-initilize based on the file data
         msgs.info('Compiling metadata')
-        self.fitstbl = PypeItMetaData(self.spectrograph, self.par, 
+        self.fitstbl = PypeItMetaData(self.spectrograph, self.par,
                                       files=self.pypeItFile.filenames,
-                                      usrdata=self.pypeItFile.data, 
+                                      usrdata=self.pypeItFile.data,
                                       strict=True)
         #   - Interpret automated or user-provided data from the PypeIt
         #   file
         self.fitstbl.finalize_usr_build(
-            self.pypeItFile.frametypes, 
+            self.pypeItFile.frametypes,
             self.pypeItFile.setup_name)
 
-        
+
         # --------------------------------------------------------------
         #   - Write .calib file (For QA naming amongst other things)
         calib_file = pypeit_file.replace('.pypeit', '.calib')
@@ -212,13 +212,13 @@ class PypeIt:
     def spec_output_file(self, frame, twod=False):
         """
         Return the path to the spectral output data file.
-        
+
         Args:
             frame (:obj:`int`):
                 Frame index from :attr:`fitstbl`.
             twod (:obj:`bool`):
                 Name for the 2D output file; 1D file otherwise.
-        
+
         Returns:
             :obj:`str`: The path for the output file
         """
@@ -325,7 +325,7 @@ class PypeIt:
                 key = self.caliBrate.master_key_dict['frame']
                 calib_dict[calib_grp][key] = {}
                 for step in self.caliBrate.steps:
-                    if step in ['bpm', 'slits', 
+                    if step in ['bpm', 'slits',
                                 'wv_calib', 'tilts', 'flats']:
                         continue
                     elif step == 'tiltimg':  # Annoying kludge
@@ -334,7 +334,7 @@ class PypeIt:
                     raw_files, self.caliBrate.master_key_dict[step] = self.caliBrate._prep_calibrations(step)
                     masterframe_name = masterframe.construct_file_name(
                         buildimage.frame_image_classes[step],
-                        self.caliBrate.master_key_dict[step], 
+                        self.caliBrate.master_key_dict[step],
                         master_dir=self.caliBrate.master_dir)
 
                     # Add to dict
@@ -426,7 +426,7 @@ class PypeIt:
             science_basename = [None]*len(grp_science)
             # Loop on unique comb_id
             u_combid = np.unique(self.fitstbl['comb_id'][grp_science])
-        
+
             for j, comb_id in enumerate(u_combid):
                 frames = np.where(self.fitstbl['comb_id'] == comb_id)[0]
                 # Find all frames whose comb_id matches the current frames bkg_id.
@@ -652,6 +652,7 @@ class PypeIt:
         obstime  = self.fitstbl.construct_obstime(frame)
         basename = self.fitstbl.construct_basename(frame, obstime=obstime)
         objtype  = self.fitstbl['frametype'][frame]
+        print(objtype)
         if 'science' in objtype:
             objtype_out = 'science'
         elif 'standard' in objtype:
@@ -682,9 +683,9 @@ class PypeIt:
         # Instantiate Calibrations class
         caliBrate = calibrations.Calibrations.get_instance(
             self.fitstbl, self.par['calibrations'], self.spectrograph,
-            self.calibrations_path, qadir=self.qa_path, 
+            self.calibrations_path, qadir=self.qa_path,
             reuse_masters=self.reuse_masters,
-            show=self.show, 
+            show=self.show,
             user_slits=slittrace.merge_user_slit(
                 self.par['rdx']['slitspatnum'], self.par['rdx']['maskIDs']))
             #slitspat_num=self.par['rdx']['slitspatnum'])
@@ -847,8 +848,8 @@ class PypeIt:
         # At instantiaton, the fullmask in self.sciImg is modified
         # TODO Are we repeating steps in the init for FindObjects and Extract??
         self.exTract = extraction.Extract.get_instance(
-            sciImg, sobjs_obj, self.spectrograph, 
-            self.par, self.caliBrate, self.objtype, 
+            sciImg, sobjs_obj, self.spectrograph,
+            self.par, self.caliBrate, self.objtype,
             bkg_redux=self.bkg_redux,
             return_negative=self.par['reduce']['extraction']['return_negative'],
             std_redux=self.std_redux,
@@ -953,7 +954,7 @@ class PypeIt:
         if self.par['rdx']['detnum'] is None:
             update_det = None
         elif isinstance(self.par['rdx']['detnum'], list):
-            update_det = [self.spectrograph.allowed_mosaics.index(d)+1 
+            update_det = [self.spectrograph.allowed_mosaics.index(d)+1
                             if isinstance(d, tuple) else d for d in self.par['rdx']['detnum']]
         else:
             update_det = self.par['rdx']['detnum']

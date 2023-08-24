@@ -63,7 +63,7 @@ class CoAdd2D:
             :class:`CoAdd2D` as its base.
         """
 
-        return next(c for c in cls.__subclasses__() 
+        return next(c for c in cls.__subclasses__()
                     if c.__name__ == (spectrograph.pypeline + 'CoAdd2D'))(
                         spec2dfiles, spectrograph, par, det=det, offsets=offsets, weights=weights,
                         spec_samp_fact=spec_samp_fact, spat_samp_fact=spat_samp_fact,
@@ -413,6 +413,7 @@ class CoAdd2D:
         spec_vec_pseudo = np.arange(nspec_pseudo)
         shape_pseudo = (nspec_pseudo, nspat_pseudo)
         imgminsky_pseudo = np.zeros(shape_pseudo)
+        sciimg_pseudo = np.zeros(shape_pseudo)
         sciivar_pseudo = np.zeros(shape_pseudo)
         waveimg_pseudo = np.zeros(shape_pseudo)
         tilts_pseudo = np.zeros(shape_pseudo)
@@ -450,6 +451,7 @@ class CoAdd2D:
             ispec = slice(0,nspec_vec[islit])
             ispat = slice(spat_left,spat_righ)
             imgminsky_pseudo[ispec, ispat] = coadd_dict['imgminsky']
+            sciimg_pseudo[ispec, ispat] = coadd_dict['sciimg']
             sciivar_pseudo[ispec, ispat] = coadd_dict['sciivar']
             waveimg_pseudo[ispec, ispat] = coadd_dict['waveimg']
             tilts_pseudo[ispec, ispat] = coadd_dict['tilts']
@@ -525,7 +527,7 @@ class CoAdd2D:
         slits_pseudo.specmin = spec_min
         slits_pseudo.specmax = spec_max
 
-        return dict(nspec=nspec_pseudo, nspat=nspat_pseudo, imgminsky=imgminsky_pseudo,
+        return dict(nspec=nspec_pseudo, nspat=nspat_pseudo, imgminsky=imgminsky_pseudo, sciimg=sciivar_pseudo,
                     sciivar=sciivar_pseudo, inmask=inmask_pseudo, tilts=tilts_pseudo,
                     waveimg=waveimg_pseudo, spat_img=spat_img_pseudo, slits=slits_pseudo,
                     wave_mask=wave_mask, wave_mid=wave_mid, wave_min=wave_min, wave_max=wave_max)
@@ -645,7 +647,11 @@ class CoAdd2D:
         pseudo_dict['sobjs'] = sobjs
         self.pseudo_dict=pseudo_dict
 
+
         return pseudo_dict['imgminsky'], pseudo_dict['sciivar'], skymodel_pseudo, \
+               objmodel_pseudo, ivarmodel_pseudo, outmask_pseudo, sobjs, sciImage.detector, slits, \
+               pseudo_dict['tilts'], pseudo_dict['waveimg']
+        return pseudo_dict['sciimg'], pseudo_dict['sciivar'], skymodel_pseudo, \
                objmodel_pseudo, ivarmodel_pseudo, outmask_pseudo, sobjs, sciImage.detector, slits, \
                pseudo_dict['tilts'], pseudo_dict['waveimg']
 
@@ -1323,7 +1329,7 @@ class MultiSlitCoAdd2D(CoAdd2D):
 class EchelleCoAdd2D(CoAdd2D):
     """
     Coadd Echelle reductions.
-    
+
     For documentation see :class:`CoAdd2D`.
 
     Echelle can either stack with:

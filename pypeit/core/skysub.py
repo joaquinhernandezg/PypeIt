@@ -612,7 +612,7 @@ def local_skysub_extract(sciimg, sciivar, tilts, waveimg, global_sky, thismask, 
     force_gauss : bool, default = False
         If True, a Gaussian profile will always be assumed for the optimal
         extraction using the FWHM determined from object finding (or provided by
-        the user) for the spatial profile. 
+        the user) for the spatial profile.
     sn_gauss : int or float, default = 4.0
         The signal to noise threshold above which optimal extraction
         with non-parametric b-spline fits to the objects spatial
@@ -629,7 +629,7 @@ def local_skysub_extract(sciimg, sciivar, tilts, waveimg, global_sky, thismask, 
         If True, construct and iteratively update a model inverse variance image
         using :func:`~pypeit.core.procimg.variance_model`.  Construction of the
         model variance *requires* ``base_var``, and will use the provided values
-        or defaults for the remaining 
+        or defaults for the remaining
         :func:`~pypeit.core.procimg.variance_model` parameters.  If False, a
         variance model will not be created and instead the input sciivar will
         always be taken to be the inverse variance. Note that in order for the
@@ -1044,7 +1044,7 @@ def ech_local_skysub_extract(sciimg, sciivar, fullmask, tilts, waveimg, global_s
         If True, construct and iteratively update a model inverse variance image
         using :func:`~pypeit.core.procimg.variance_model`.  Construction of the
         model variance *requires* ``base_var``, and will use the provided values
-        or defaults for the remaining 
+        or defaults for the remaining
         :func:`~pypeit.core.procimg.variance_model` parameters.  If False, a
         variance model will not be created and instead the input sciivar will
         always be taken to be the inverse variance. Note that in order for the
