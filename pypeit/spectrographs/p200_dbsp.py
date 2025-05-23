@@ -169,6 +169,20 @@ class P200DBSPSpectrograph(spectrograph.Spectrograph):
         msgs.warn('Cannot determine if frames are of type {0}.'.format(ftype))
         return np.zeros(len(fitstbl), dtype=bool)
 
+    def get_rawimage(self, raw_file, det):
+        """
+        Read raw spectrograph image files and return data and relevant metadata
+        needed for image processing.
+
+        For P200/DBSP, the ``DATASEC`` and ``OSCANSEC`` regions are read
+        directly from the file header and are automatically adjusted to account
+        for the on-chip binning.  This is a simple wrapper for
+        :func:`pypeit.spectrographs.spectrograph.Spectrograph.get_rawimage` that
+        sets ``sec_includes_binning`` to True.  See the base-class function for
+        the detailed descriptions of the input parameters and returned objects.
+        """
+        return super().get_rawimage(raw_file, det, sec_includes_binning=True)
+
 
 class P200DBSPBlueSpectrograph(P200DBSPSpectrograph):
     """
@@ -246,7 +260,7 @@ class P200DBSPBlueSpectrograph(P200DBSPSpectrograph):
             specflip        = True,
             spatflip        = False, # check
             platescale      = 0.389,
-            darkcurr        = 0.0,
+            darkcurr        = 0.0,  # e-/pixel/hour
             saturation      = 65000.,
             nonlinear       = 62./65.,
             mincounts       = -1e10, # cross-check
@@ -293,7 +307,7 @@ class P200DBSPBlueSpectrograph(P200DBSPSpectrograph):
         # Do not flux calibrate
         par['fluxcalib'] = None
         # Set the default exposure time ranges for the frame typing
-        par['calibrations']['biasframe']['exprng'] = [None, 1]
+        par['calibrations']['biasframe']['exprng'] = [None, 0.001]
         par['calibrations']['darkframe']['exprng'] = [999999, None]     # No dark frames
         par['calibrations']['pinholeframe']['exprng'] = [999999, None]  # No pinhole frames
         par['calibrations']['arcframe']['exprng'] = [None, 120]
@@ -470,7 +484,7 @@ class P200DBSPRedSpectrograph(P200DBSPSpectrograph):
             specflip        = False,
             spatflip        = False, # check
             platescale      = 0.293,
-            darkcurr        = 0.0,
+            darkcurr        = 0.0,  # e-/pixel/hour
             saturation      = 45000.,
             nonlinear       = 40./45.,
             mincounts       = -1e10, # check
@@ -516,7 +530,7 @@ class P200DBSPRedSpectrograph(P200DBSPSpectrograph):
         # Do not flux calibrate
         par['fluxcalib'] = None
         # Set the default exposure time ranges for the frame typing
-        par['calibrations']['biasframe']['exprng'] = [None, 1]
+        par['calibrations']['biasframe']['exprng'] = [None, 0.001]
         par['calibrations']['darkframe']['exprng'] = [999999, None]     # No dark frames
         par['calibrations']['pinholeframe']['exprng'] = [999999, None]  # No pinhole frames
         par['calibrations']['arcframe']['exprng'] = [None, 120]
@@ -525,7 +539,7 @@ class P200DBSPRedSpectrograph(P200DBSPSpectrograph):
 
         par['sensfunc']['algorithm'] = 'UVIS'
         par['sensfunc']['UVIS']['polycorrect'] = False
-        par['sensfunc']['IR']['telgridfile'] = 'TelFit_Lick_3100_11100_R10000.fits'
+        par['sensfunc']['IR']['telgridfile'] = 'TellPCA_3000_26000_R10000.fits'
         return par
 
     def config_specific_par(self, scifile, inp_par=None):
@@ -575,6 +589,9 @@ class P200DBSPRedSpectrograph(P200DBSPSpectrograph):
                 'D68': {
                     7600: 'p200_dbsp_red_1200_7100_d68.fits',
                     8200: 'p200_dbsp_red_1200_7100_d68.fits'
+                },
+                'D55': {
+                    6680: 'p200_dbsp_red_1200_7100_d55_6680.fits'
                 }
             },
             '1200/9400': {

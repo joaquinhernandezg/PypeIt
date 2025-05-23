@@ -42,8 +42,9 @@ where:
     - the quantity :math:`C=N_{\rm frames}\ c/s\prime=c/s` is the number of electron counts excited by
       photons hitting the detector,
     - :math:`1/s=N_{\rm frames}/s\prime` is a factor that accounts for the number
-      of frames contributing to the electron counts, and the relative
-      throughput factors (see below) that can be measured from flat-field frames,
+      of frames contributing to the electron counts (`N_{\rm frames}`), and (`s\prime`) the relative
+      throughput factors (see below) that can be measured from flat-field frames plus a scaling factor
+      applied if the counts of each frame are scaled to the mean counts of all frames,
     - :math:`D` is the dark-current, i.e., the rate at which the detector
       generates thermal electrons, in e-/pixel/s,
     - :math:`N_{\rm bin}` is the number of pixels in a binned pixel,
@@ -140,7 +141,7 @@ Read and Digitization Noise
 
 Readnoise variance, :math:`V_{\rm rn}`, is calculated by
 :func:`~pypeit.core.procimg.rn2_frame`.  The calculation requires the detector
-readnoise (RN in elections, e-) and, possibly, gain (:math:`g` in e-/ADU)
+readnoise (RN in electrons, e-) and, possibly, gain (:math:`g` in e-/ADU)
 for each amplifier, which are provided for each amplifier by the
 :class:`~pypeit.images.detector_container.DetectorContainer` object defined for
 each detector in each :class:`~pypeit.spectrographs.spectrograph.Spectrograph`
@@ -166,7 +167,7 @@ parameter.  If you need to add digitization noise for your instrument, please
 Overscan Subtraction
 --------------------
 
-If available, the raw-image reader for each spectrograph returns the overscan
+If available, the raw image reader for each spectrograph returns the overscan
 region of the detector; see
 :func:`~pypeit.spectrographs.spectrograph.Spectrograph.get_rawimage`.  Overscan
 subtraction uses this region of the image to subtract a per-frame bias level;
@@ -180,7 +181,7 @@ is propagated to the image-processing error budget.
 Trimming & Re-orientation
 -------------------------
 
-The raw-image reader for each spectrograph returns the primary data region of
+The raw image reader for each spectrograph returns the primary data region of
 the detector; see
 :func:`~pypeit.spectrographs.spectrograph.Spectrograph.get_rawimage`.  Trimming
 crops the image to only include the primary data region; see
@@ -198,7 +199,7 @@ in our documentation as ``(nspec,nspat)``.  The operations required to
 flip/transpose the image arrays to match the PypeIt convention are dictated by
 instrument-specific :class:`~pypeit.images.detector_container.DetectorContainer`
 parameters and performed by
-:func:`~pypeit.spectrograph.spectrographs.Spectrograph.orient_image`.  Image
+:func:`~pypeit.spectrographs.spectrograph.Spectrograph.orient_image`.  Image
 orientation will be performed if the ``orient`` parameter is true.
 
 .. warning::
@@ -220,8 +221,8 @@ pixel-to-pixel bias-level correction in the science region of the detector.  To
 perform bias subtraction, include bias frames in your :ref:`pypeit_file` and set
 ``use_biasimage`` to true.  The bias correction (see
 :func:`~pypeit.images.rawimage.RawImage.subtract_bias`) is applied *after*
-trimming and orientation.  Uncertainty in the bias subtraction is propagated to
-the image-processing error budget. 
+trimming, orientation, and overscan subtraction.
+Uncertainty in the bias subtraction is propagated to the image-processing error budget.
 
 Dark Subtraction
 ----------------
@@ -229,7 +230,7 @@ Dark Subtraction
 In addition to readnoise and gain, our instrument-specific
 :class:`~pypeit.images.detector_container.DetectorContainer` objects also
 provide the expected dark current; see :ref:`detectors`.  The tabulated dark
-current must be in elections per pixel per *hour*.  Note that:
+current must be in electrons per pixel per *hour*.  Note that:
 
     - "per pixel" means per *unbinned* pixel; dark current in a binned pixel is
       :math:`N_{\rm bin}` higher than in an unbinned pixel

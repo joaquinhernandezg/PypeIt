@@ -37,8 +37,9 @@ class PypeItSetup:
             file name without the full path) to a specific frame type (e.g.,
             arc, bias, etc.).  The file name and type are expected to be the key
             and value of the dictionary, respectively.  If None, this is
-            determined by the :func:`get_frame_types` method.
-        usrdata (:obj:`astropy.table.Table`, optional):
+            determined by the
+            :func:`~pypeit.metadata.PypeItMetaData.get_frame_types` method.
+        usrdata (`astropy.table.Table`_, optional):
             A user provided set of data used to supplement or overwrite
             metadata read from the file headers.  The table must have a
             `filename` column that is used to match to the metadata
@@ -162,35 +163,46 @@ class PypeItSetup:
                    cfg_lines=pypeItFile.cfg_lines, 
                    pypeit_file=filename)
 
-    # TODO: Make the default here match the default used by
-    # io.files_from_extension?
     @classmethod
-    def from_file_root(cls, root, spectrograph, extension='.fits'):
+    def from_file_root(cls, root, spectrograph, extension=None):
         """
-        Instantiate the :class:`PypeItSetup` object by providing a file
-        root.
+        Instantiate the :class:`~pypeit.pypeitsetup.PypeItSetup` object by
+        providing a file root.
         
         Args:
-            root (:obj:`str`):
-                String used to find the raw files; see
+            root (:obj:`str`, `Path`_, :obj:`list`):
+                One or more paths within which to search for files; see
                 :func:`~pypeit.io.files_from_extension`.
-            spectrograph (:obj:`str`):
+            spectrograph (:obj:`str`, :class:`~pypeit.spectrographs.spectrograph.Spectrograph`):
                 The PypeIt name of the spectrograph used to take the
-                observations.  This should be one of the available
-                options in
-                :func:`~pypeit.spectrographs.available_spectrographs`.
-            extension (:obj:`str`, optional):
+                observations.  This should be one of the available options in
+                :attr:`~pypeit.spectrographs.available_spectrographs`.
+            extension (:obj:`str`, :obj:`list`, optional):
                 The extension common to all the fits files to reduce; see
-                :func:`~pypeit.io.files_from_extension`.
-        
+                :func:`~pypeit.io.files_from_extension`.  If None, uses the
+                ``allowed_extensions`` of the spectrograph class.  Otherwise,
+                this *must* be a subset of the allowed extensions for the
+                selected spectrograph.
+
         Returns:
             :class:`PypeitSetup`: The instance of the class.
         """
-        return cls.from_rawfiles(io.files_from_extension(root, extension=extension), spectrograph)
+        # NOTE: This works if `spectrograph` is either a string or a
+        # Spectrograph object
+        spec = load_spectrograph(spectrograph).__class__
+        files = spec.find_raw_files(root, extension=extension)
+        nfiles = len(files)
+        if nfiles == 0:
+            msgs.error(f'Unable to find any raw files for {spec.name} in {root}!')
+        else:
+            msgs.info(f'Found {nfiles} {spec.name} raw files.')
+        return cls.from_rawfiles(files, spectrograph)
 
     @classmethod
     def from_rawfiles(cls, data_files:list, spectrograph:str, frametype=None):
-        """ Instantiate the :class:`PypeItSetup` object by providing a list of raw files.
+        """
+        Instantiate the :class:`~pypeit.pypeitsetup.PypeItSetup` object by
+        providing a list of raw files.
 
         Args:
             data_files (list): 
@@ -202,10 +214,11 @@ class PypeItSetup:
                 file name without the full path) to a specific frame type (e.g.,
                 arc, bias, etc.).  The file name and type are expected to be the
                 key and value of the dictionary, respectively.  If None, this is
-                determined by the :func:`get_frame_types` method.
+                determined by the
+                :func:`~pypeit.metadata.PypeItMetaData.get_frame_types` method.
 
         Returns:
-            :class:`PypeItSetup`: The instance of the class.
+            :class:`~pypeit.pypeitsetup.PypeItSetup`: The instance of the class.
         """
 
         # Configure me
@@ -229,14 +242,13 @@ class PypeItSetup:
         """
         Construct the table with metadata for the frames to reduce.
 
-        Largely a wrapper for :func:`pypeit.core.load.create_fitstbl`.
+        Largely a wrapper for :class:`~pypeit.metadata.PypeItMetaData`.
 
         Args:
             strict (:obj:`bool`, optional):
-                Function will fault if :func:`fits.getheader` fails to
-                read the headers of any of the files in
-                :attr:`file_list`.  Set to False to only report a
-                warning and continue.
+                Function will fault if `astropy.io.fits.getheader`_ fails to
+                read the headers of any of the files in :attr:`file_list`.  Set
+                to False to only report a warning and continue.
 
         Returns:
             `astropy.table.Table`_: Table with the metadata for each fits file
@@ -259,7 +271,7 @@ class PypeItSetup:
         Include the frame types in the metadata table.
 
         This is mainly a wrapper for
-        :func:`PypeItMetaData.get_frame_types`.
+        :func:`~pypeit.metadata.PypeItMetaData.get_frame_types`.
 
         .. warning::
 
@@ -378,11 +390,11 @@ class PypeItSetup:
         self.fitstbl.remove_rows(rows, regroup=regroup)
         # Remove the files from the file list
         self.file_list = [f for f in self.file_list 
-                            if Path(f).resolve().name in self.fitstbl['filename']]
+                            if Path(f).absolute().name in self.fitstbl['filename']]
         # Remove the files from the frametype
         if self.frametype is not None:
             self.frametype = {k : v for k,v in self.frametype.items()
-                                if Path(k).resolve().name in self.fitstbl['filename']}
+                                if Path(k).absolute().name in self.fitstbl['filename']}
         # Remove the files from the user data
         if self.usrdata is not None:
             keep = [i for i in range(len(self.usrdata)) 

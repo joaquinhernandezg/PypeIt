@@ -1,21 +1,15 @@
 
 .. |PyPI| image:: https://img.shields.io/pypi/v/pypeit?label=PyPI&logo=pypi&logoColor=white
-    :target: https://pypi.org/project/pypeit/
+    :target: https://pypi.org/project/pypeit/#history
 
-.. |Conda| image:: https://img.shields.io/conda/vn/conda-forge/pypeit?label=conda%20version
-    :target: https://anaconda.org/conda-forge/pypeit
-
-.. |CondaDownloads| image:: https://img.shields.io/conda/dn/conda-forge/pypeit?label=conda%20downloads
-    :target: https://anaconda.org/conda-forge/pypeit
+.. |pypi_downloads| image:: https://img.shields.io/pypi/dm/pypeit
+    :target: https://pypi.org/project/pypeit/#files
 
 .. |License| image:: https://img.shields.io/github/license/pypeit/PypeIt
    :target: https://github.com/pypeit/PypeIt/blob/release/LICENSE.rst
 
 .. |CITests| image:: https://github.com/pypeit/PypeIt/workflows/CI%20Tests/badge.svg
     :target: https://github.com/pypeit/PypeIt/actions?query=workflow%3A"CI+Tests"
-
-.. |Coverage| image:: https://codecov.io/gh/PypeIt/pypeit/branch/release/graph/badge.svg
-    :target: https://codecov.io/gh/PypeIt/pypeit
 
 .. |docs| image:: https://readthedocs.org/projects/pypeit/badge/?version=latest
     :target: https://pypeit.readthedocs.io/en/latest/
@@ -50,9 +44,9 @@
 PypeIt |forks| |stars|
 ======================
 
-|github| |pypi| |conda| |CondaDownloads| |License|
+|github| |pypi| |pypi_downloads| |License|
 
-|docs| |CITests| |Coverage| 
+|docs| |CITests|
 
 |DOI_latest| |JOSS| |arxiv|
 
@@ -67,7 +61,7 @@ PypeIt is designed to be used by both advanced spectroscopists with prior data
 reduction expertise and astronomers with no prior experience of data reduction.
 It is highly configurable and designed to be applied to any standard
 slit-imaging spectrograph, including long-slit, multi-slit, as well as
-cross-dispersed echelle spectra.  **The spectrogaphs that PypeIt can be used
+cross-dispersed echelle spectra.  **The spectrographs that PypeIt can be used
 with are listed** `here
 <https://pypeit.readthedocs.io/en/release/spectrographs/spectrographs.html>`__.
 
@@ -97,7 +91,7 @@ follow our `Code of Conduct
 
 Along with our extensive `online documentation
 <https://pypeit.readthedocs.io/en/release/>`__, we encourage the PypeIt user
-base to communicate via our `PypeIt Users Slack <pypeit-users.slack.com>`__.
+base to communicate via our `PypeIt Users Slack <https://pypeit-users.slack.com>`__.
 All are welcome to join using `this invitation link <https://join.slack.com/t/pypeit-users/shared_invite/zt-1kc4rxhsj-vKU1JnUA~8PZE~tPlu~aTg>`__.
 
 If you find a bug (particularly one that is experienced by others in the Users
@@ -170,4 +164,6 @@ development of PypeIt.
 * Milan Roberson
 * Timothy Pickering
 * Timothy Ellsworth-Bowers
+* Gregory Simonian
+* Heather Martin
 

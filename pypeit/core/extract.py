@@ -23,14 +23,16 @@ from pypeit.core import procimg
 from pypeit.core.moment import moment1d
 
 
-def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
-                    spec, min_frac_use=0.05, base_var=None, count_scale=None, noise_floor=None):
+def extract_optimal(imgminsky, ivar, mask, waveimg, skyimg, thismask, oprof,
+                    spec, min_frac_use=0.05, fwhmimg=None, flatimg=None,
+                    base_var=None, count_scale=None, noise_floor=None):
 
     r"""
-    Perform optimal extraction `(Horne 1986) <https://ui.adsabs.harvard.edu/abs/1986PASP...98..609H/abstract>`_
-    for a single :class:`~pypeit.specobjs.SpecObj`.
+    Perform optimal extraction `(Horne 1986)
+    <https://ui.adsabs.harvard.edu/abs/1986PASP...98..609H/abstract>`__ for a
+    single :class:`~pypeit.specobj.SpecObj`.
 
-    The :class:`~pypeit.specobjs.SpecObj` object is changed in place with optimal attributes
+    The :class:`~pypeit.specobj.SpecObj` object is changed in place with optimal attributes
     being filled with the extraction parameters, and additional sky and noise estimates being added.
     The following are the attributes that are filled here:
 
@@ -40,6 +42,8 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
       - spec.OPT_COUNTS_SIG  -->  Optimally extracted noise from IVAR
       - spec.OPT_COUNTS_NIVAR  -->  Optimally extracted noise variance (sky + read noise) only
       - spec.OPT_MASK  -->   Mask for optimally extracted flux
+      - spec.OPT_FWHM  -->   Spectral FWHM (in A) for optimally extracted flux
+      - spec.OPT_FLAT  -->   Flat field spectrum, normalised at the peak value, for the optimally extracted flux
       - spec.OPT_COUNTS_SKY  -->  Optimally extracted sky
       - spec.OPT_COUNTS_SIG_DET  -->  Square root of optimally extracted read noise squared
       - spec.OPT_FRAC_USE  -->  Fraction of pixels in the object profile subimage used for this extraction
@@ -48,8 +52,9 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
 
     Parameters
     ----------
-    sciimg : `numpy.ndarray`_
-        Floating-point science image with shape :math:`(N_{\rm spec}, N_{\rm spat})`.
+    imgminsky : `numpy.ndarray`_
+        Floating-point science image minus skymodel (i.e., imgminsky = sciimg - skyimg)
+        with shape :math:`(N_{\rm spec}, N_{\rm spat})`.
         The first dimension (:math:`N_{\rm spec}`) is spectral, and second dimension
         (:math:`N_{\rm spat}`) is spatial.
     ivar : `numpy.ndarray`_
@@ -82,6 +87,13 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
         For each spectral pixel, if the majority of the object profile has been masked, i.e.,
         the sum of the normalized object profile across the spatial direction is less than `min_frac_use`,
         the optimal extraction will also be masked. The default value is 0.05.
+    fwhmimg : `numpy.ndarray`_, None, optional:
+        Floating-point image containing the modeled spectral FWHM (in pixels) at every pixel location.
+        Must have the same shape as ``sciimg``, :math:`(N_{\rm spec}, N_{\rm spat})`.
+    flatimg : `numpy.ndarray`_, None, optional:
+        Floating-point image containing the unnormalized flat-field image. This image
+        is used to extract the blaze function. Must have the same shape as ``sciimg``,
+        :math:`(N_{\rm spec}, N_{\rm spat})`.
     base_var : `numpy.ndarray`_, optional
         Floating-point "base-level" variance image set by the detector properties and
         the image processing steps. See :func:`~pypeit.core.procimg.base_variance`.
@@ -104,7 +116,7 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
         added.
     """
     # Setup
-    imgminsky = sciimg - skyimg
+    # imgminsky = sciimg - skyimg
     nspat = imgminsky.shape[1]
     nspec = imgminsky.shape[0]
 
@@ -137,6 +149,10 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
     img_sub = imgminsky[:,mincol:maxcol]
     sky_sub = skyimg[:,mincol:maxcol]
     oprof_sub = oprof[:,mincol:maxcol]
+    if fwhmimg is not None:
+        fwhmimg_sub = fwhmimg[:,mincol:maxcol]
+    if flatimg is not None:
+        flatimg_sub = flatimg[:,mincol:maxcol]
     # enforce normalization and positivity of object profiles
     norm = np.nansum(oprof_sub,axis = 1)
     norm_oprof = np.outer(norm, np.ones(nsub))
@@ -179,7 +195,12 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
     wave_opt = np.nansum(mask_sub*ivar_sub*wave_sub*oprof_sub**2, axis=1)/(mivar_num + (mivar_num == 0.0))
     mask_opt = (tot_weight > 0.0) & (frac_use > min_frac_use) & (mivar_num > 0.0) & (ivar_denom > 0.0) & \
                np.isfinite(wave_opt) & (wave_opt > 0.0)
-
+    fwhm_opt = None
+    if fwhmimg is not None:
+        fwhm_opt = np.nansum(mask_sub*ivar_sub*fwhmimg_sub*oprof_sub, axis=1) * utils.inverse(tot_weight)
+    blaze_opt = None
+    if flatimg is not None:
+        blaze_opt = np.nansum(mask_sub*ivar_sub*flatimg_sub*oprof_sub, axis=1) * utils.inverse(tot_weight)
     # Interpolate wavelengths over masked pixels
     badwvs = (mivar_num <= 0) | np.invert(np.isfinite(wave_opt)) | (wave_opt <= 0.0)
     if badwvs.any():
@@ -208,6 +229,12 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
     chi2_denom = np.fmax(np.nansum(ivar_sub*mask_sub > 0.0, axis=1) - 1.0, 1.0)
     chi2 = chi2_num/chi2_denom
 
+    # Calculate the Angstroms/pixel and Spectral FWHM
+    if fwhm_opt is not None:
+        fwhm_opt *= np.gradient(wave_opt)  # Convert pixel FWHM to Angstroms
+    # Normalize the blaze function
+    if blaze_opt is not None:
+        blaze_opt /= np.nanmax(blaze_opt)
     # Fill in the optimally extraction tags
     spec.OPT_WAVE = wave_opt    # Optimally extracted wavelengths
     spec.OPT_COUNTS = flux_opt    # Optimally extracted flux
@@ -215,6 +242,9 @@ def extract_optimal(sciimg, ivar, mask, waveimg, skyimg, thismask, oprof,
     spec.OPT_COUNTS_SIG = np.sqrt(utils.inverse(spec.OPT_COUNTS_IVAR))
     spec.OPT_COUNTS_NIVAR = None if nivar_opt is None else nivar_opt*np.logical_not(badwvs)  # Optimally extracted noise variance (sky + read noise) only
     spec.OPT_MASK = mask_opt*np.logical_not(badwvs)     # Mask for optimally extracted flux
+    spec.OPT_FWHM = fwhm_opt  # Spectral FWHM (in Angstroms) for the optimally extracted spectrum
+    if blaze_opt is not None:
+        spec.OPT_FLAT = blaze_opt   # Flat field spectrum, normalised to the peak value
     spec.OPT_COUNTS_SKY = sky_opt      # Optimally extracted sky
     spec.OPT_COUNTS_SIG_DET = base_opt      # Square root of optimally extracted read noise squared
     spec.OPT_FRAC_USE = frac_use    # Fraction of pixels in the object profile subimage used for this extraction
@@ -293,14 +323,14 @@ def extract_asym_boxcar(sciimg, left_trace, righ_trace, gpm=None, ivar=None):
         return flux_out, gpm_box, box_npix, ivar_out
 
 
-def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
+def extract_boxcar(imgminsky, ivar, mask, waveimg, skyimg, spec, fwhmimg=None, flatimg=None, base_var=None,
                    count_scale=None, noise_floor=None):
     r"""
-    Perform boxcar extraction for a single :class:`~pypeit.specobjs.SpecObj`.
+    Perform boxcar extraction for a single :class:`~pypeit.specobj.SpecObj`.
     The size of the boxcar must be available as an attribute of the
     :class:`~pypeit.specobj.SpecObj` object.
 
-    The :class:`~pypeit.specobjs.SpecObj` object is changed in place with boxcar attributes
+    The :class:`~pypeit.specobj.SpecObj` object is changed in place with boxcar attributes
     being filled with the extraction parameters, and additional sky and noise estimates being added.
     The following are the attributes that are filled here:
     
@@ -310,14 +340,17 @@ def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
       - spec.BOX_COUNTS_SIG -->  Box car extracted error
       - spec.BOX_COUNTS_NIVAR -->  Box car extracted noise variance
       - spec.BOX_MASK -->  Box car extracted mask
+      - spec.BOX_FWHM -->  Box car extracted spectral FWHM
+      - spec.BOX_FLAT -->  Box car extracted flatfield spectrum function (normalized to peak value)
       - spec.BOX_COUNTS_SKY -->  Box car extracted sky
       - spec.BOX_COUNTS_SIG_DET -->  Box car extracted read noise
       - spec.BOX_NPIX  -->  Number of pixels used in boxcar sum
 
     Parameters
     ----------
-    sciimg : `numpy.ndarray`_
-        Floating-point science image with shape :math:`(N_{\rm spec}, N_{\rm spat})`.
+    imgminsky : `numpy.ndarray`_
+        Floating-point science image minus skymodel (i.e., imgminsky = sciimg - skyimg)
+        with shape :math:`(N_{\rm spec}, N_{\rm spat})`.
         The first dimension (:math:`N_{\rm spec}`) is spectral, and second dimension
         (:math:`N_{\rm spat}`) is spatial.
     ivar : `numpy.ndarray`_
@@ -338,6 +371,12 @@ def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
         Container that holds object, trace, and extraction
         information for the object in question. **This object is altered in place!**
         Note that this routine operates one object at a time.
+    fwhmimg : `numpy.ndarray`_, None, optional
+        Floating-point image containing the modeled spectral FWHM (in pixels) at every pixel location.
+        Must have the same shape as ``sciimg``, :math:`(N_{\rm spec}, N_{\rm spat})`.
+    flatimg : `numpy.ndarray`_, None, optional
+        Floating-point image containing the normalized flat-field. Must have the same shape as
+        ``sciimg``, :math:`(N_{\rm spec}, N_{\rm spat})`.
     base_var : `numpy.ndarray`_, optional
         Floating-point "base-level" variance image set by the detector properties and
         the image processing steps. See :func:`~pypeit.core.procimg.base_variance`.
@@ -346,7 +385,8 @@ def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
         A scale factor, :math:`s`, that *has already been applied* to the
         provided science image. It accounts for the number of frames contributing to
         the provided counts, and the relative throughput factors that can be measured
-        from flat-field frames. For example, if the image has been flat-field
+        from flat-field frames plus a scaling factor applied if the counts of each frame are
+        scaled to the mean counts of all frames. For example, if the image has been flat-field
         corrected, this is the inverse of the flat-field counts.  If None, set
         to 1.  If a single float, assumed to be constant across the full image.
         If an array, the shape must match ``base_var``.  The variance will be 0
@@ -360,7 +400,7 @@ def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
         added.
     """
     # Setup
-    imgminsky = sciimg - skyimg
+    # imgminsky = sciimg - skyimg
     nspat = imgminsky.shape[1]
     nspec = imgminsky.shape[0]
 
@@ -384,6 +424,12 @@ def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
                          row=spec.trace_spec)[0]
     wave_box = moment1d(waveimg*mask, spec.TRACE_SPAT, 2*box_radius,
                         row=spec.trace_spec)[0] / (box_denom + (box_denom == 0.0))
+    fwhm_box = None
+    if fwhmimg is not None:
+        fwhm_box = moment1d(fwhmimg*mask, spec.TRACE_SPAT, 2*box_radius, row=spec.trace_spec)[0]
+    blaze_box = None
+    if flatimg is not None:
+        blaze_box = moment1d(flatimg*mask, spec.TRACE_SPAT, 2*box_radius, row=spec.trace_spec)[0]
     varimg = 1.0/(ivar + (ivar == 0.0))
     var_box = moment1d(varimg*mask, spec.TRACE_SPAT, 2*box_radius, row=spec.trace_spec)[0]
     nvar_box = None if var_no is None \
@@ -412,18 +458,74 @@ def extract_boxcar(sciimg, ivar, mask, waveimg, skyimg, spec, base_var=None,
     ivar_box = 1.0/(var_box + (var_box == 0.0))
     nivar_box = None if nvar_box is None else 1.0/(nvar_box + (nvar_box == 0.0))
 
+    # Calculate the Angstroms/pixel and the final spectral FWHM value
+    if fwhm_box is not None:
+        ang_per_pix = np.gradient(wave_box)
+        fwhm_box *= ang_per_pix * utils.inverse(pixtot - pixmsk)  # Need to divide by total number of unmasked pixels
+    # Normalize the blaze function
+    if blaze_box is not None:
+        blaze_box *= utils.inverse(pixtot - pixmsk)  # Need to divide by total number of unmasked pixels
+        blaze_box *= utils.inverse(np.nanmax(blaze_box[mask_box]))  # Now normalize to the peak value
     # Fill em up!
     spec.BOX_WAVE = wave_box
     spec.BOX_COUNTS = flux_box*mask_box
     spec.BOX_COUNTS_IVAR = ivar_box*mask_box*np.logical_not(bad_box)
-    spec.BOX_COUNTS_SIG = np.sqrt(utils.inverse( spec.BOX_COUNTS_IVAR))
+    spec.BOX_COUNTS_SIG = np.sqrt(utils.inverse(spec.BOX_COUNTS_IVAR))
     spec.BOX_COUNTS_NIVAR = None if nivar_box is None else nivar_box*mask_box*np.logical_not(bad_box)
     spec.BOX_MASK = mask_box*np.logical_not(bad_box)
+    spec.BOX_FWHM = fwhm_box  # Spectral FWHM (in Angstroms) for the boxcar extracted spectrum
+    if blaze_box is not None:
+        spec.BOX_FLAT = blaze_box  # Flat field spectrum, normalised to the peak value
     spec.BOX_COUNTS_SKY = sky_box
     spec.BOX_COUNTS_SIG_DET = base_box
     # TODO - Confirm this should be float, not int
     # JFH: Yes it should be a float becuase moment1d can operate on sub-pixels
     spec.BOX_NPIX = pixtot-pixmsk
+
+
+def extract_hist_spectrum(waveimg, frame, gpm=None, bins=1000):
+    """
+    Generate a quick spectrum using the nearest grid point (histogram) algorithm.
+
+    Args:
+        waveimg (`numpy.ndarray`_):
+            A 2D image of the wavelength at each pixel.
+        frame (`numpy.ndarray`_):
+            The frame to use to extract a spectrum. Shape should be the same as waveimg
+        gpm (`numpy.ndarray`_, optional):
+            A boolean array indicating the pixels to include in the histogram (True = include)
+        bins (`numpy.ndarray`_, int, optional):
+            Either a 1D array indicating the bin edges to be used for the histogram,
+            or an integer that specifies the number of bin edges to generate
+
+    Returns:
+        A tuple containing the wavelength and spectrum at the centre of each histogram bin. Both
+        arrays returned in the tuple are `numpy.ndarray`_.
+    """
+    # Check the inputs
+    if waveimg.shape != frame.shape:
+        msgs.error("Wavelength image is not the same shape as the input frame")
+    # Check the GPM
+    _gpm = gpm if gpm is not None else waveimg > 0
+    if waveimg.shape != _gpm.shape:
+        msgs.error("Wavelength image is not the same shape as the GPM")
+    # Set the bins
+    if isinstance(bins, int):
+        _bins = np.linspace(np.min(waveimg[_gpm]), np.max(waveimg[_gpm]), bins)
+    elif isinstance(bins, np.ndarray):
+        _bins = bins
+    else:
+        msgs.error("Argument 'bins' should be an integer or a numpy array")
+
+    # Construct a histogram and the normalisation
+    hist, edge = np.histogram(waveimg[gpm], bins=_bins, weights=frame[gpm])
+    cntr, edge = np.histogram(waveimg[gpm], bins=_bins)
+    # Normalise
+    cntr = cntr.astype(float)
+    spec = hist * utils.inverse(cntr)
+    # Generate the corresponding wavelength array - set it to be the bin centre
+    wave = 0.5 * (_bins[1:] + _bins[:-1])
+    return wave, spec
 
 
 def findfwhm(model, sig_x):
@@ -572,7 +674,7 @@ def qa_fit_profile(x_tot, y_tot, model_tot, l_limit = None,
             closest = (dist[close]).argmin()
             model_samp[i] = (model[close])[closest]
         if nclose > 3:
-            s = yclose.argsort()
+            s = yclose.argsort(kind='stable')
             y50[i] = yclose[s[int(np.rint((nclose - 1)*0.5))]]
             y80[i] = yclose[s[int(np.rint((nclose - 1)*0.8))]]
             y20[i] = yclose[s[int(np.rint((nclose - 1)*0.2))]]
@@ -584,7 +686,7 @@ def qa_fit_profile(x_tot, y_tot, model_tot, l_limit = None,
     else:
         ax.plot(plot_mid, y50, marker='o', color='lime', markersize=2, fillstyle = 'full', linestyle='None')
 
-    isort = x.argsort()
+    isort = x.argsort(kind='stable')
     ax.plot(x[isort], model[isort], color='red', linewidth=1.0)
 
 
@@ -833,7 +935,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
     spline_flux1[ispline] = spline_tmp
     cont_tmp, _ = c_answer.value(wave[ispline])
     cont_flux1[ispline] = cont_tmp
-    isrt = np.argsort(wave[indsp])
+    isrt = np.argsort(wave[indsp], kind='stable')
     s2_1_interp = scipy.interpolate.interp1d(wave[indsp][isrt], sn2[isrt],assume_sorted=False, bounds_error=False,fill_value = 0.0)
     sn2_1[ispline] = s2_1_interp(wave[ispline])
     bmask = np.zeros(nspec,dtype='bool')
@@ -880,7 +982,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
         # Create the normalized object image
         if np.any(totmask):
             igd = (wave >= wave_min) & (wave <= wave_max)
-            isrt1 = np.argsort(wave[igd])
+            isrt1 = np.argsort(wave[igd], kind='stable')
             #plt.plot(wave[igd][isrt1], spline_flux1[igd][isrt1])
             #plt.show()
             spline_img_interp = scipy.interpolate.interp1d(wave[igd][isrt1],spline_flux1[igd][isrt1],assume_sorted=False,
@@ -946,7 +1048,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
         inside, = np.where(IN_PIX.flatten())
 
 
-    si = inside[np.argsort(sigma_x.flat[inside])]
+    si = inside[np.argsort(sigma_x.flat[inside], kind='stable')]
     sr = si[::-1]
 
     bset, bmask = fitting.iterfit(sigma_x.flat[si],norm_obj.flat[si], invvar = norm_ivar.flat[si],
@@ -1003,7 +1105,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
         return (profile_model, trace_in, fwhmfit, med_sn2)
 
     sigma_iter = 3
-    isort = (xtemp.flat[si[inside]]).argsort()
+    isort = (xtemp.flat[si[inside]]).argsort(kind='stable')
     inside = si[inside[isort]]
     pb = np.ones(inside.size)
 
@@ -1080,7 +1182,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
 
         # Update the profile B-spline fit for the next iteration
         if iiter < sigma_iter-1:
-            ss = sigma_x.flat[inside].argsort()
+            ss = sigma_x.flat[inside].argsort(kind='stable')
             pb = (np.outer(area, np.ones(nspat,dtype=float))).flat[inside]
             keep = (bkpt >= sigma_x.flat[inside].min()) & (bkpt <= sigma_x.flat[inside].max())
             if keep.sum() == 0:
@@ -1104,7 +1206,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
         xnew = trace_in
 
     fwhmfit = sigma*2.3548
-    ss=sigma_x.flatten().argsort()
+    ss=sigma_x.flatten().argsort(kind='stable')
     inside, = np.where((sigma_x.flat[ss] >= min_sigma) &
                        (sigma_x.flat[ss] <= max_sigma) &
                        mask[ss] &
@@ -1123,7 +1225,7 @@ def fit_profile(image, ivar, waveimg, thismask, spat_img, trace_in, wave,
     sigma_x_igood = sigma_x.flat[igood]
     yfit_out, _  = bset.value(sigma_x_igood)
     full_bsp[igood] = yfit_out
-    isrt2 = sigma_x_igood.argsort()
+    isrt2 = sigma_x_igood.argsort(kind='stable')
     (peak, peak_x, lwhm, rwhm) = findfwhm(yfit_out[isrt2] - median_fit, sigma_x_igood[isrt2])
 
 

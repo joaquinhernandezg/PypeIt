@@ -10,6 +10,18 @@ from astropy import units
 
 #TODO: Remove 'Par' from class name?
 
+
+class AATTelescopePar(TelescopePar):
+    def __init__(self):
+        loc = EarthLocation.of_site('Siding Spring Observatory')
+        super(AATTelescopePar, self).__init__(name='AAT',
+                                              longitude=loc.lon.to(units.deg).value,
+                                              latitude=loc.lat.to(units.deg).value,
+                                              elevation=loc.height.to(units.m).value,
+                                              diameter=3.9,
+                                              eff_aperture=12.0)
+
+
 class GTCTelescopePar(TelescopePar):
     def __init__(self):
         loc = EarthLocation.of_site('Roque de los Muchachos')
@@ -146,6 +158,16 @@ class KPNOTelescopePar(TelescopePar):
                                                diameter=4.0,
                                                eff_aperture=11.2)
 # KPNO from https://en.wikipedia.org/wiki/Nicholas_U._Mayall_Telescope
+
+class HiltnerTelescopePar(TelescopePar): 
+    def __init__(self):
+        loc = EarthLocation.of_site('mdm') 
+        super(HiltnerTelescopePar, self).__init__(name='HILTNER', 
+                                           longitude=loc.lon.to(units.deg).value, 
+                                           latitude=loc.lat.to(units.deg).value, 
+                                           elevation=loc.height.to(units.m).value, 
+                                           diameter=2.4)
+# See https://noirlab.edu/public/programs/kitt-peak-national-observatory/the-hiltner-24m-telescope/
 
 class MMTTelescopePar(TelescopePar):
     def __init__(self):

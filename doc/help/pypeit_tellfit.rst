@@ -4,12 +4,14 @@
     usage: pypeit_tellfit [-h] [--objmodel {qso,star,poly}] [-r REDSHIFT]
                           [-g TELL_GRID] [-p PCA_FILE] [-t TELL_FILE] [--debug]
                           [--plot] [--par_outfile PAR_OUTFILE] [-v VERBOSITY]
+                          [--chk_version]
                           spec1dfile
     
     Telluric correct a spectrum
     
     positional arguments:
-      spec1dfile            spec1d file that will be used for telluric correction.
+      spec1dfile            spec1d or coadd file that will be used for telluric
+                            correction.
     
     options:
       -h, --help            show this help message and exit
@@ -26,15 +28,15 @@
                             poly = For other type object, You might need to set
                             fit_wv_min_max, and norder in the tell_file.
                              
-      -r REDSHIFT, --redshift REDSHIFT
+      -r, --redshift REDSHIFT
                             Specify redshift. Used with the --objmodel qso option
                             above.
-      -g TELL_GRID, --tell_grid TELL_GRID
+      -g, --tell_grid TELL_GRID
                             Telluric grid. You should download the giant grid file
                             to the pypeit/data/telluric folder. It should only be
                             passed if you want to overwrite the default tell_grid
                             that is set via each spectrograph file.
-      -p PCA_FILE, --pca_file PCA_FILE
+      -p, --pca_file PCA_FILE
                             Quasar PCA fits file with full path. The default file
                             (qso_pca_1200_3100.fits) is stored in the
                             pypeit/data/telluric folder. If you change the fits
@@ -42,7 +44,7 @@
                             the tell_file to specify the wavelength coverage of your
                             model. The defaults are pca_lower=1220. and
                             pca_upper=3100.
-      -t TELL_FILE, --tell_file TELL_FILE
+      -t, --tell_file TELL_FILE
                             Configuration file to change default telluric
                             parameters.  Note that the parameters in this file will
                             be overwritten if you set argument in your terminal.
@@ -69,8 +71,12 @@
       --par_outfile PAR_OUTFILE
                             Name of output file to save the parameters used by the
                             fit
-      -v VERBOSITY, --verbosity VERBOSITY
+      -v, --verbosity VERBOSITY
                             Verbosity level between 0 [none] and 2 [all]. Default:
                             1. Level 2 writes a log with filename tellfit_YYYYMMDD-
                             HHMM.log
+      --chk_version         Ensure the datamodels are from the current PypeIt
+                            version. By default (consistent with previous
+                            functionality) this is not enforced and crashes may
+                            ensue ...
     

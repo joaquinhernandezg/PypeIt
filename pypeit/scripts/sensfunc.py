@@ -7,6 +7,7 @@ Script to determine the sensitivity function for a PypeIt 1D spectrum.
 from IPython import embed
 
 from pypeit.scripts import scriptbase
+from pathlib import Path
 
 
 class SensFunc(scriptbase.ScriptBase):
@@ -20,6 +21,14 @@ class SensFunc(scriptbase.ScriptBase):
         parser.add_argument("spec1dfile", type=str,
                             help='spec1d file for the standard that will be used to compute '
                                  'the sensitivity function')
+        parser.add_argument("--extr", type=str, default=None, choices=['OPT', 'BOX'],
+                            help="R|Override the default extraction method used for computing the sensitivity "
+                                 "function.  Note that it is not possible to set --extr and "
+                                 "simultaneously use a .sens file with the --sens_file option. If "
+                                 "you are using a .sens file, set the algorithm there via:\n\n"
+                                 "F|    [sensfunc]\n"
+                                 "F|         extr = BOX\n"
+                                 "\nThe extraction options are: OPT or BOX")
         parser.add_argument("--algorithm", type=str, default=None, choices=['UVIS', 'IR'],
                             help="R|Override the default algorithm for computing the sensitivity "
                                  "function.  Note that it is not possible to set --algorithm and "
@@ -57,6 +66,16 @@ class SensFunc(scriptbase.ScriptBase):
                                  'provided but with .fits trimmed off if it is in the filename.')
         parser.add_argument("-s", "--sens_file", type=str,
                             help='Configuration file with sensitivity function parameters')
+        parser.add_argument("-f", "--use_flat", default=False, action="store_true",
+                            help="R|Use the extracted spectrum of the flatfield calibration to estimate the blaze "
+                                 "function when generating the sensitivity function. This is helpful to account for "
+                                 "small scale undulations in the sensitivity function. The spec1dfile must contain the "
+                                 "extracted flatfield response in order to use this option. This spectrum is extracted "
+                                 "by default, unless you did not compute a pixelflat frame. Note that it is not "
+                                 "possible to set --use_flat and simultaneously use a .sens file with the --sens_file "
+                                 "option. If you are using a .sens file, set the use_flat flag with the argument:\n\n"
+                                 "F|    [sensfunc]\n"
+                                 "F|         use_flat = True")
         parser.add_argument("--debug", default=False, action="store_true",
                             help="show debug plots?")
         parser.add_argument("--par_outfile", default='sensfunc.par',
@@ -71,8 +90,6 @@ class SensFunc(scriptbase.ScriptBase):
         """Executes sensitivity function computation."""
 
         import os
-
-        from astropy.io import fits
 
         from pypeit import msgs
         from pypeit import inputfiles
@@ -94,6 +111,15 @@ class SensFunc(scriptbase.ScriptBase):
                        "         algorithm = IR\n"
                        "\n")
 
+        if args.use_flat and args.sens_file is not None:
+            msgs.error("It is not possible to set --use_flat and simultaneously use a .sens "
+                       "file via the --sens_file option. If you are using a .sens file set the "
+                       "use_flat flag in your .sens file using the argument:\n"
+                       "\n"
+                       "    [sensfunc]\n"
+                       "       use_flat = True\n"
+                       "\n")
+
         if args.multi is not None and args.sens_file is not None:
             msgs.error("It is not possible to set --multi and simultaneously use a .sens file via "
                        "the --sens_file option. If you are using a .sens file set the detectors "
@@ -103,36 +129,53 @@ class SensFunc(scriptbase.ScriptBase):
                        "              multi_spec_det = 3,7\n"
                        "\n")
 
-        # Determine the spectrograph
-        hdul = io.fits_open(args.spec1dfile)
-        spectrograph = load_spectrograph(hdul[0].header['PYP_SPEC'])
-        spectrograph_config_par = spectrograph.config_specific_par(hdul)
+        if args.extr is not None and args.sens_file is not None:
+            msgs.error("It is not possible to set --extr and simultaneously use a .sens file via "
+                       "the --sens_file option. If you are using a .sens file set the extraction "
+                       "method there via:\n"
+                       "\n"
+                       "         [sensfunc]\n"
+                       "              extr = BOX\n"
+                       "\n")
 
-        # Construct a primary FITS header that includes the spectrograph's
-        #   config keys for inclusion in the output sensfunc file
-        primary_hdr = io.initialize_header()
-        add_keys = (
-            ['PYP_SPEC', 'DATE-OBS', 'TELESCOP', 'INSTRUME', 'DETECTOR']
-            + spectrograph.configuration_keys() + spectrograph.raw_header_cards()
-        )
-        for key in add_keys:
-            if key.upper() in hdul[0].header.keys():
-                primary_hdr[key.upper()] = hdul[0].header[key.upper()]
+
+        # Determine the spectrograph and generate the primary FITS header
+        with io.fits_open(args.spec1dfile) as hdul:
+            spectrograph = load_spectrograph(hdul[0].header['PYP_SPEC'])
+            spectrograph_config_par = spectrograph.config_specific_par(hdul)
+
+            # Construct a primary FITS header that includes the spectrograph's
+            #   config keys for inclusion in the output sensfunc file
+            primary_hdr = io.initialize_header()
+            add_keys = (
+                ['PYP_SPEC', 'DATE-OBS', 'TELESCOP', 'INSTRUME', 'DETECTOR']
+                + spectrograph.configuration_keys() + spectrograph.raw_header_cards()
+            )
+            for key in add_keys:
+                if key.upper() in hdul[0].header.keys():
+                    primary_hdr[key.upper()] = hdul[0].header[key.upper()]
+
+
 
         # If the .sens file was passed in read it and overwrite default parameters
-
         if args.sens_file is not None:
             sensFile = inputfiles.SensFile.from_file(args.sens_file)
             # Read sens file
-            par = pypeitpar.PypeItPar.from_cfg_lines(cfg_lines=spectrograph_config_par.to_config(),
-                merge_with=(sensFile.cfg_lines,))
+            par = pypeitpar.PypeItPar.from_cfg_lines(
+                        cfg_lines=spectrograph_config_par.to_config(),
+                        merge_with=(sensFile.cfg_lines,))
         else:
-            par = spectrograph_config_par 
+            par = pypeitpar.PypeItPar.from_cfg_lines(cfg_lines=spectrograph_config_par.to_config())
 
         # If algorithm was provided override defaults. Note this does undo .sens
         # file since they cannot both be passed
         if args.algorithm is not None:
             par['sensfunc']['algorithm'] = args.algorithm
+
+        # If use_flat was flagged in the input, set use_flat to True. Note this does undo .sens
+        # file since they cannot both be passed
+        if args.use_flat:
+            par['sensfunc']['use_flat'] = True
 
         # If multi was set override defaults. Note this does undo .sens file
         # since they cannot both be passed
@@ -140,6 +183,11 @@ class SensFunc(scriptbase.ScriptBase):
             # parse
             multi_spec_det  = [int(item) for item in args.multi.split(',')]
             par['sensfunc']['multi_spec_det'] = multi_spec_det
+
+        # If extr was provided override defaults. Note this does undo .sens
+        # file since they cannot both be passed
+        if args.extr is not None:
+            par['sensfunc']['extr'] = args.extr
 
         # TODO Add parsing of detectors here. If detectors passed from the
         # command line, overwrite the parset values read in from the .sens file
@@ -159,12 +207,12 @@ class SensFunc(scriptbase.ScriptBase):
                         if args.outfile is None else args.outfile
         # Instantiate the relevant class for the requested algorithm
         sensobj = sensfunc.SensFunc.get_instance(args.spec1dfile, outfile, par['sensfunc'],
-                                                 debug=args.debug)
+                                                 par_fluxcalib=par['fluxcalib'], debug=args.debug,
+                                                 chk_version=par['rdx']['chk_version'])
         # Generate the sensfunc
         sensobj.run()
         # Write it out to a file, including the new primary FITS header
         sensobj.to_file(outfile, primary_hdr=primary_hdr, overwrite=True)
 
-        #TODO JFH Add a show_sensfunc option here and to the sensfunc classes.
-
+        #TODO JFH Add a show_sensfunc option here and to the sensfunc classes.      
 

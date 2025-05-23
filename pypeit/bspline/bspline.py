@@ -74,7 +74,7 @@ class bspline(datamodel.DataContainer):
     Attributes
     ----------
     breakpoints
-        Breakpoints for bspline, spacing for these breakpoints are determinated by keywords inputs;
+        Breakpoints for bspline, spacing for these breakpoints are determined by keywords inputs;
     nord
         Order of bspline; [default=4]
     npoly
@@ -532,7 +532,7 @@ class bspline(datamodel.DataContainer):
             is good).
         """
         # TODO: Is the sorting necessary?
-        xsort = x.argsort()
+        xsort = x.argsort(kind='stable')
         if action is None:
             action, lower, upper = self.action(x[xsort], x2=None if x2 is None else x2[xsort])
         else:
@@ -550,12 +550,12 @@ class bspline(datamodel.DataContainer):
         mask[(x < gb[self.nord-1]) | (x > gb[n])] = False
         hmm = (np.diff(goodbk) > 2).nonzero()[0]
         if hmm.size == 0:
-            return yfit[np.argsort(xsort)], mask
+            return yfit[np.argsort(xsort, kind='stable')], mask
 
         for jj in range(hmm.size):
             mask[(x >= self.breakpoints[goodbk[hmm[jj]]])
                     & (x <= self.breakpoints[goodbk[hmm[jj]+1]-1])] = False
-        return yfit[np.argsort(xsort)], mask
+        return yfit[np.argsort(xsort, kind='stable')], mask
 
     def maskpoints(self, err):
         """Perform simple logic of which breakpoints to mask.
@@ -700,7 +700,7 @@ def uniq(x, index=None):
 
     Returns
     -------
-    `np.ndarray`
+    result : `numpy.ndarray`_
         The indices of the last occurence in `x` of its unique
         values.
 

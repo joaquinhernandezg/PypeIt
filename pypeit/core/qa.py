@@ -1,8 +1,9 @@
 """ Module for QA in PypeIt
+
+.. include:: ../include/links.rst
+
 """
 import os
-import datetime
-import getpass
 import glob
 import numpy as np
 import yaml
@@ -49,6 +50,8 @@ def set_qa_filename(root, method, det=None, slit=None, prefix=None, out_dir=None
     elif method == 'arc_fit_qa':
 #        outfile = 'QA/PNGs/Arc_1dfit_{:s}_S{:04d}.png'.format(root, slit)
         outfile = 'PNGs/Arc_1dfit_{:s}_S{:04d}.png'.format(root, slit)
+    elif method == 'arc_fwhm_qa':
+        outfile = 'PNGs/Arc_FWHMfit_{:s}_S{:04d}.png'.format(root, slit)
     elif method == 'plot_orderfits_Arc':  # This is root for multiple PNGs
         outfile = 'QA/PNGs/Arc_lines_{:s}_S{:04d}_'.format(root, slit)
     elif method == 'arc_fit2d_global_qa':
@@ -127,24 +130,6 @@ def get_dimen(x, maxp=25):
     return pages, npp
 
 
-def gen_timestamp():
-    """ Generate a simple time stamp including the current user
-
-    Returns
-    -------
-    timestamp : str
-      user_datetime
-    """
-    tstamp = datetime.datetime.today().strftime('%Y-%m-%d-T%Hh%Mm%Ss')
-    try:
-        user = getpass.getuser()
-    except ModuleNotFoundError:
-        # there appears to be a bug in getpass in windows systems where the pwd module doesn't load
-        user = os.getlogin()
-    # Return
-    return '{:s}_{:s}'.format(user, tstamp)
-
-
 def html_header(title):
     """
     Generate a simple HTML header
@@ -186,11 +171,12 @@ def html_header(title):
     return head
 
 def html_end(f, body, links=None):
-    """ Fill in the HTML file with a proper ending
+    """
+    Fill in the HTML file with a proper ending
 
     Parameters
     ----------
-    f : file
+    f : `io.TextIOWrapper`_
     body : str
     links : str, optional
 
@@ -220,8 +206,10 @@ def html_init(f, title):
     Initialize the HTML file
 
     Args:
-        f (fileobj): file object to write to
-        title (str): title
+        f (`io.TextIOWrapper`_):
+            file object to write to
+        title (str):
+            title
 
     Returns:
         str: Initial HTML text incluing the header and links
@@ -471,11 +459,14 @@ def gen_exp_html():
 
 
 def close_qa(pypeit_file, qa_path):
-    """Tie off QA under a crash
+    """
+    Tie off QA under a crash
 
     Args:
-        pypeit_file (_type_): _description_
-        qa_path (_type_): _description_
+        pypeit_file (str):
+            PypeIt file name
+        qa_path (str):
+            Path to QA directory
     """
     if pypeit_file is None:
         return

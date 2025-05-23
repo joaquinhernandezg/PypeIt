@@ -55,7 +55,7 @@ def djs_maskinterp1(yval, mask, xval=None, const=False):
             if igood[ngood-1] != ny-1:
                 ynew[igood[ngood-1]+1:ny] = ynew[igood[ngood-1]]
     else:
-        ii = xval.argsort()
+        ii = xval.argsort(kind='stable')
         ibad = (mask[ii] != 0).nonzero()[0]
         igood = (mask[ii] == 0).nonzero()[0]
         ynew[ii[ibad]] = np.interp(xval[ii[ibad]], xval[ii[igood]],
@@ -325,7 +325,7 @@ class TraceSet(object):
         When initialized with x,y positions, this contains the fitted y
         values.
     pypeitFits : list
-        Holds a list of :class:`pypeit.fitting.PypeItFit` fits
+        Holds a list of :class:`~pypeit.core.fitting.PypeItFit` fits
     """
     # ToDO Remove the kwargs and put in all the djs_reject parameters here
     def __init__(self, *args, **kwargs):
@@ -882,7 +882,7 @@ def djs_reject(data, model, outmask=None, inmask=None,
                         # Test if too many points rejected in this group.
                         #
                         if np.sum(badness[jj] != 0) > maxrej1[iloop]:
-                            isort = badness[jj].argsort()
+                            isort = badness[jj].argsort(kind='stable')
                             #
                             # Make the following points good again.
                             #
@@ -897,16 +897,16 @@ def djs_reject(data, model, outmask=None, inmask=None,
 
     # print(newmask)
     if grow > 0:
-        rejects = newmask == 0
-        if rejects.any():
-            irejects = rejects.nonzero()[0]
-            for k in range(1, grow):
-                newmask[(irejects - k) > 0] = 0
-                newmask[(irejects + k) < (data.shape[0]-1)] = 0
+        bpm = np.logical_not(newmask)
+        if bpm.any():
+            irejects = np.where(bpm)[0]
+            for k in range(1, grow+1):
+                newmask[np.clip(irejects - k, 0,None)] = False
+                newmask[np.clip(irejects + k, None, data.shape[0]-1)] = False
     if inmask is not None:
-        newmask = newmask & inmask
+        newmask &= inmask
     if sticky:
-        newmask = newmask & outmask
+        newmask &= outmask
     #
     # Set qdone if the input outmask is identical to the output outmask.
     #
@@ -915,7 +915,7 @@ def djs_reject(data, model, outmask=None, inmask=None,
     # to python True and False booleans
 
     outmask = newmask
-    return (outmask, qdone)
+    return outmask, qdone
 
 
 
@@ -1656,7 +1656,7 @@ def spherematch(ra1, dec1, ra2, dec2, matchlength, chunksize=None,
     omatch1 = np.array(match1)
     omatch2 = np.array(match2)
     odistance12 = np.array(distance12)
-    s = odistance12.argsort()
+    s = odistance12.argsort(kind='stable')
     #
     # Retain only desired matches
     #

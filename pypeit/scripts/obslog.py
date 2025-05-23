@@ -65,8 +65,11 @@ class ObsLog(scriptbase.ScriptBase):
         parser.add_argument('-s', '--sort', default='mjd', type=str,
                             help='Metadata keyword (pypeit-specific) to use to sort the output '
                                  'table.')
-        parser.add_argument('-e', '--extension', default='.fits',
-                            help='File extension; compression indicators (e.g. .gz) not required.')
+        parser.add_argument('-e', '--extension', default=None,
+                            help='File extension to use.  Must include the period (e.g., ".fits") '
+                                 'and it must be one of the allowed extensions for this '
+                                 'spectrograph.  If None, root directory will be searched for '
+                                 'all files with any of the allowed extensions.')
         parser.add_argument('-d', '--output_path', default='current working directory',
                             help='Path to top-level output directory.')
         parser.add_argument('-o', '--overwrite', default=False, action='store_true',
@@ -82,6 +85,8 @@ class ObsLog(scriptbase.ScriptBase):
                                  'session).  The table is always written in ascii format using '
                                  'format=ascii.fixed_with for the call to '
                                  'Astropy.table.Table.write .')
+        parser.add_argument('-G','--gui', default=False, action='store_true',
+                            help='View the obs log in a GUI')
         return parser
 
     @staticmethod
@@ -97,6 +102,12 @@ class ObsLog(scriptbase.ScriptBase):
                              + '\tSelect an available instrument or consult the documentation '
                              + 'on how to add a new instrument.')
 
+        if args.gui:
+            from pypeit.scripts.setup_gui import SetupGUI
+            gui_args = SetupGUI.parse_args(["-s", args.spec, "-r", args.root, "-e", args.extension])
+            SetupGUI.main(gui_args)
+
+
         if args.keys:
             # Only print the metadata to header card mapping
             load_spectrograph(args.spec).meta_key_map()
@@ -107,8 +118,7 @@ class ObsLog(scriptbase.ScriptBase):
                              f'argument.')
 
         # Generate the metadata table
-        ps = PypeItSetup.from_file_root(args.root, args.spec, 
-                                        extension=args.extension)
+        ps = PypeItSetup.from_file_root(args.root, args.spec, extension=args.extension)
         ps.run(setup_only=True,  # This allows for bad headers
                groupings=args.groupings,
                clean_config=args.bad_frames)

@@ -5,6 +5,7 @@ Script for performing 2d coadds of PypeIt data.
 .. include:: ../include/links.rst
 """
 from pypeit.scripts import scriptbase
+from pypeit.core import parse
 
 class CoAdd2DSpec(scriptbase.ScriptBase):
 
@@ -31,18 +32,6 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
         parser.add_argument('-v', '--verbosity', type=int, default=1,
                             help='Verbosity level between 0 [none] and 2 [all]. Default: 1. '
                                  'Level 2 writes a log with filename coadd_2dspec_YYYYMMDD-HHMM.log')
-
-        # TODO: Make spec_samp_fact and spat_samp_fact parameters in CoAdd2DPar,
-        # and then move these to setup_coadd2d.py
-        parser.add_argument('--spec_samp_fact', default=1.0, type=float,
-                            help="Make the wavelength grid finer (spec_samp_fact < 1.0) or "
-                                 "coarser (spec_samp_fact > 1.0) by this sampling factor, i.e. "
-                                 "units of spec_samp_fact are pixels.")
-        parser.add_argument('--spat_samp_fact', default=1.0, type=float,
-                            help="Make the spatial grid finer (spat_samp_fact < 1.0) or coarser "
-                                 "(spat_samp_fact > 1.0) by this sampling factor, i.e. units of "
-                                 "spat_samp_fact are pixels.")
-
         #parser.add_argument("--wave_method", type=str, default=None,
         #                    help="Wavelength method for wavelength grid. If not set, code will "
         #                         "use linear for Multislit and log10 for Echelle")
@@ -102,8 +91,8 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
         spec2d_files = coadd2dFile.filenames
 
         # Get the paths
-        coadd_scidir, qa_path = map(lambda x : Path(x).resolve(),
-                                    coadd2d.CoAdd2D.output_paths(spec2d_files, par))
+        coadd_scidir, qa_path = map(lambda x : Path(x).absolute(),
+                coadd2d.CoAdd2D.output_paths(spec2d_files, par, coadd_dir=par['rdx']['redux_path']))
 
         # Get the output basename
         head2d = fits.getheader(spec2d_files[0])
@@ -112,6 +101,7 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
 
         # Write the par to disk
         par_outfile = coadd_scidir.parent / f'{basename}_coadd2d.par'
+
         print(f'Writing full parameter set to {par_outfile}.')
         par.to_config(par_outfile, exclude_defaults=True, include_descr=False)
 
@@ -137,11 +127,9 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
         sci_dict['meta']['find_negative'] = find_negative
 
         # Find the detectors to reduce
-        # TODO: Allow slitspatnum to be specified?  E.g.:
-#        detectors = spectrograph.select_detectors(
-#                subset=par['rdx']['detnum'] if par['rdx']['slitspatnum'] is None else
-#                        par['rdx']['slitspatnum'])
-        detectors = spectrograph.select_detectors(subset=par['rdx']['detnum'])
+        detectors = spectrograph.select_detectors(subset=par['rdx']['detnum'] if par['coadd2d']['only_slits'] is None
+                                                  else par['coadd2d']['only_slits'])
+
         msgs.info(f'Detectors to work on: {detectors}')
 
         # container for specobjs
@@ -152,23 +140,40 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
         all_spec2d['meta']['bkg_redux'] = bkg_redux
         all_spec2d['meta']['find_negative'] = find_negative
 
+        # get only_slits and exclude_slits if they are set
+        only_dets, only_spat_ids, exclude_dets, exclude_spat_ids = None, None, None, None
+        if par['coadd2d']['only_slits'] is not None:
+            only_dets, only_spat_ids = parse.parse_slitspatnum(par['coadd2d']['only_slits'])
+        if par['coadd2d']['exclude_slits'] is not None:
+            if par['coadd2d']['only_slits'] is not None:
+                msgs.warn('Both `only_slits` and `exclude_slits` are provided. They are mutually exclusive. '
+                          'Using `only_slits` and ignoring `exclude_slits`')
+            else:
+                exclude_dets, exclude_spat_ids = parse.parse_slitspatnum(par['coadd2d']['exclude_slits'])
+
         # Loop on detectors
         for det in detectors:
             msgs.info("Working on detector {0}".format(det))
+
+            detname = spectrograph.get_det_name(det)
+            this_only_slits = only_spat_ids[only_dets == detname] if np.any(only_dets == detname) else None
+            this_exclude_slits = exclude_spat_ids[exclude_dets == detname] if np.any(exclude_dets == detname) else None
 
             # Instantiate Coadd2d
             coadd = coadd2d.CoAdd2D.get_instance(spec2d_files, spectrograph, par, det=det,
                                                  offsets=par['coadd2d']['offsets'],
                                                  weights=par['coadd2d']['weights'],
-                                                 spec_samp_fact=args.spec_samp_fact,
-                                                 spat_samp_fact=args.spat_samp_fact,
+                                                 only_slits=this_only_slits,
+                                                 exclude_slits=this_exclude_slits,
+                                                 spec_samp_fact=par['coadd2d']['spec_samp_fact'],
+                                                 spat_samp_fact=par['coadd2d']['spat_samp_fact'],
                                                  bkg_redux=bkg_redux, find_negative=find_negative,
                                                  debug_offsets=args.debug_offsets,
                                                  debug=args.debug)
 
             # TODO Add this stuff to a run method in coadd2d
             # Coadd the slits
-            coadd_dict_list = coadd.coadd(only_slits=par['coadd2d']['only_slits'])
+            coadd_dict_list = coadd.coadd()
             # Create the pseudo images
             pseudo_dict = coadd.create_pseudo_image(coadd_dict_list)
             # Reduce
@@ -206,6 +211,7 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
             all_spec2d[coadd.detname] = spec2dobj.Spec2DObj(sciimg=sci_dict[coadd.detname]['sciimg'],
                                                           ivarraw=sci_dict[coadd.detname]['sciivar'],
                                                           skymodel=sci_dict[coadd.detname]['skymodel'],
+                                                          bkg_redux_skymodel=None,
                                                           objmodel=sci_dict[coadd.detname]['objmodel'],
                                                           ivarmodel=sci_dict[coadd.detname]['ivarmodel'],
                                                           scaleimg=np.array([1.0], dtype=float),
@@ -220,6 +226,8 @@ class CoAdd2DSpec(scriptbase.ScriptBase):
                                                           vel_corr=None,
                                                           vel_type=None,
                                                           maskdef_designtab=maskdef_designtab)
+
+        all_spec2d['meta']['effective_exptime'] = coadd.exptime_coadd
 
         # SAVE TO DISK
 
