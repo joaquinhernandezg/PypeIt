@@ -713,12 +713,10 @@ class PypeIt:
         caliBrate = calibrations.Calibrations.get_instance(
             self.fitstbl, self.par['calibrations'], self.spectrograph,
             self.calibrations_path, qadir=self.qa_path,
-            reuse_calibs=self.reuse_calibs, show=self.show,
-            user_slits=slittrace.merge_user_slit(
-                self.par['rdx']['slitspatnum'], self.par['rdx']['maskIDs']))
-            #slitspat_num=self.par['rdx']['slitspatnum'])
-            self.calibrations_path, qadir=self.qa_path,
-            reuse_calibs=self.reuse_calibs, show=self.show, user_slits=user_slits,
+            reuse_calibs=self.reuse_calibs,
+            show=self.show,
+            #slitspat_num=self.par['rdx']['slitspatnum'],
+            user_slits=user_slits,
             chk_version=self.par['rdx']['chk_version'])
         # These need to be separate to accomodate COADD2D
         caliBrate.set_config(frames[0], det, self.par['calibrations'])
