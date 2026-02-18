@@ -248,9 +248,13 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
         if self.get_meta_value(scifile, 'dispname') == 'VPH-Red':
             par['calibrations']['wavelengths']['lamps'] = ['HeI','NeI','ArI']
             par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_VPH-Red.fits'
+            par['calibrations']['wavelengths']['n_final'] = 5
+            par['calibrations']['wavelengths']['n_first'] = 3
+
             par['calibrations']['flatfield']['slit_illum_finecorr'] = False
             par['reduce']['cube']['wave_min'] = 5_500.0
             par['reduce']['cube']['wave_max'] = 11_000.0
+            
         elif self.get_meta_value(scifile, 'dispname') == 'VPH-Blue':
             par['calibrations']['wavelengths']['lamps'] = ['HeI','NeI','ArI']
             par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_VPH-Blue.fits'
