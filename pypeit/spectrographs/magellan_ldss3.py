@@ -27,11 +27,15 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
     telescope = telescopes.MagellanTelescopePar()
     camera = 'LDSS3-C'
     header_name = 'LDSS3'
+
+    name = 'magellan_ldss3'
+    supported = True
+    pypeline = 'MultiSlit'
     # UPDATED: Added instrument URL for documentation
     url = 'https://www.lco.cl/technical-documentation/ldss-3-user-manual/'
     # UPDATED: Added descriptive comment
     comment = 'Low Dispersion Survey Spectrograph'
-    supported = False
+
 
     def init_meta(self):
         """
@@ -246,28 +250,43 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
 
         # Wavelength calibration and setup-dependent parameters
         if self.get_meta_value(scifile, 'dispname') == 'VPH-Red':
+            # for using the lamp
+            par['calibrations']['wavelengths']['method'] = 'full_template'
+
             par['calibrations']['wavelengths']['lamps'] = ['HeI','NeI','ArI']
-            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_VPH-Red.fits'
+            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_vph_red_HeINeIArI.fits'
             par['calibrations']['wavelengths']['n_final'] = 5
             par['calibrations']['wavelengths']['n_first'] = 3
 
             par['calibrations']['flatfield']['slit_illum_finecorr'] = False
             par['reduce']['cube']['wave_min'] = 5_500.0
             par['reduce']['cube']['wave_max'] = 11_000.0
-            
+            # for using skylines
+
+            par['calibrations']['wavelengths']['lamps'] = ['OH_LDSS3_vac']
+            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_vph_red_sky.fits'
+
+
         elif self.get_meta_value(scifile, 'dispname') == 'VPH-Blue':
             par['calibrations']['wavelengths']['lamps'] = ['HeI','NeI','ArI']
-            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_VPH-Blue.fits'
+            par['calibrations']['wavelengths']['method'] = 'full_template'
+            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_vph_blue_HeINeIArI.fits'
             par['calibrations']['flatfield']['slit_illum_finecorr'] = False
             par['reduce']['cube']['wave_min'] = 3_500.0
             par['reduce']['cube']['wave_max'] = 6_500.0
+            par['calibrations']['wavelengths']['n_final'] = 5
+            par['calibrations']['wavelengths']['n_first'] = 3
+
         elif self.get_meta_value(scifile, 'dispname') == 'VPH-All':
             par['calibrations']['wavelengths']['lamps'] = ['HeI','NeI','ArI']
-            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_VPH-All.fits'
+            par['calibrations']['wavelengths']['method'] = 'full_template'
+            par['calibrations']['wavelengths']['reid_arxiv'] = 'magellan_ldss3_vph_all_HeINeIArI.fits'
             par['calibrations']['flatfield']['slit_illum_finecorr'] = False
-            par['reduce']['findobj']['find_min_max'] = [500, 2051]
             par['reduce']['cube']['wave_min'] = 4_000.0
             par['reduce']['cube']['wave_max'] = 11_000.0
+            par['calibrations']['wavelengths']['n_final'] = 5
+            par['calibrations']['wavelengths']['n_first'] = 3
+
         else:
             msgs.warn('magellan_ldss3.py: template arc missing for this grism! Trying holy-grail...')
             par['calibrations']['wavelengths']['method'] = 'holy-grail'
@@ -520,7 +539,7 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
 
         if nimg == 1:
             return detectors[0], image[0], hdu, exptime, rawdatasec_img[0], oscansec_img[0]
-        
+
         return mosaic, image, hdu, exptime, rawdatasec_img, oscansec_img
 
 
@@ -561,63 +580,21 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
         # because we've created it inside this function.
         _bpm_img = np.expand_dims(bpm_img, 0) if nimg == 1 else bpm_img
 
+        if 1 in _det:
+            i = _det.index(1)
+            _bpm_img[i,:,443] = 1
+        if 2 in _det:
+            i = _det.index(2)
+            _bpm_img[i,:,389] = 1
+            _bpm_img[i,:,525:527] = 1
+            _bpm_img[i,:,578:582] = 1
+            _bpm_img[i,:,611:616] = 1
+            _bpm_img[i,:,664:666] = 1
+            _bpm_img[i,:,671] = 1
+            _bpm_img[i,:,1017:1023] = 1
+
+
         return _bpm_img[0] if nimg == 1 else _bpm_img
-
-class MagellanLDSS3MultiSlitSpectrograph(MagellanLDSS3Spectrograph):
-    """
-    Child class for Magellan/LDSS3 multi-slit spectroscopy mode.
-    """
-    name = 'magellan_ldss3_multi'
-    supported = True
-    pypeline = 'MultiSlit'  # Specifies the reduction pipeline
-    ndet = 2
-
-    @classmethod
-    def default_pypeit_par(cls):
-        """
-        Return the default parameters to use for this instrument.
-
-        Returns:
-            :class:`~pypeit.par.pypeitpar.PypeItPar`: Parameters required by
-            all of ``PypeIt`` methods.
-        """
-        par = super().default_pypeit_par()
-
-        par['rdx']['detnum'] = [(1, 2)]
-
-        # Wavelengths
-        # UPDATED: Changed 'rms_threshold' to 'rms_thresh_frac_fwhm' (modern parameter name)
-        # UPDATED: Removed deprecated parameters 'sigrej_final' and 'sigrej_first'
-        par['calibrations']['wavelengths']['rms_thresh_frac_fwhm'] = 0.3
-        par['calibrations']['wavelengths']['sigdetect'] = 5.0
-        par['calibrations']['wavelengths']['fwhm'] = 5.0
-        par['calibrations']['wavelengths']['n_first'] = 2
-        par['calibrations']['wavelengths']['n_final'] = 4
-
-        # UPDATED: Set grating-dependent match tolerance
-        par['calibrations']['wavelengths']['match_toler'] = 0.5
-
-        # Set slits and tilts parameters
-        par['calibrations']['slitedges']['sobel_mode'] = 'constant'
-        par['calibrations']['slitedges']['det_buffer'] = 20
-
-        # Processing steps
-        # UPDATED: Changed to 'use_overscan' (was already correct)
-        turn_off = dict(use_overscan=False, use_darkimage=False)
-        par.reset_all_processimages_par(**turn_off)
-
-
-        # Good exposure times, we do not limit them
-        par['calibrations']['standardframe']['exprng'] = [0, None]
-        par['calibrations']['arcframe']['exprng'] = [0, None]
-        par['calibrations']['darkframe']['exprng'] = [0, None]
-        par['scienceframe']['exprng'] = [0, None]
-
-        par["calibrations"]["biasframe"]["process"]["combine"] = "median"
-        par["calibrations"]["darkframe"]["process"]["combine"] = "median"
-
-
-        return par
 
     def list_detectors(self, mosaic=False):
         """
@@ -652,6 +629,65 @@ class MagellanLDSS3MultiSlitSpectrograph(MagellanLDSS3Spectrograph):
         """
         dets = super().list_detectors(mosaic=mosaic)
         return dets if mosaic else dets.reshape(2,-1)
+
+    @classmethod
+    def default_pypeit_par(cls):
+        """
+        Return the default parameters to use for this instrument.
+
+        Returns:
+            :class:`~pypeit.par.pypeitpar.PypeItPar`: Parameters required by
+            all of ``PypeIt`` methods.
+        """
+        par = super().default_pypeit_par()
+
+        par['rdx']['detnum'] = [(1, 2)]
+
+        # Wavelengths
+        # UPDATED: Changed 'rms_threshold' to 'rms_thresh_frac_fwhm' (modern parameter name)
+        # UPDATED: Removed deprecated parameters 'sigrej_final' and 'sigrej_first'
+        par['calibrations']['wavelengths']['rms_thresh_frac_fwhm'] = 0.3
+        par['calibrations']['wavelengths']['sigdetect'] = 5.0
+        par['calibrations']['wavelengths']['fwhm'] = 5.0
+        par['calibrations']['wavelengths']['n_first'] = 2
+        par['calibrations']['wavelengths']['n_final'] = 4
+
+        # UPDATED: Set grating-dependent match tolerance
+        par['calibrations']['wavelengths']['match_toler'] = 0.5
+
+        # Set slits and tilts parameters
+        par['calibrations']['slitedges']['sobel_mode'] = 'constant'
+        par['calibrations']['slitedges']['det_buffer'] = 20
+        par['calibrations']['slitedges']['edge_thresh'] = 100
+        par['calibrations']['slitedges']['smash_range'] = [0.4, 0.6]
+
+        # Processing steps
+        # UPDATED: Changed to 'use_overscan' (was already correct)
+        turn_off = dict(use_overscan=False, use_darkimage=False)
+        par.reset_all_processimages_par(**turn_off)
+
+
+        # Good exposure times, we do not limit them
+        par['calibrations']['standardframe']['exprng'] = [0, None]
+        par['calibrations']['arcframe']['exprng'] = [0, None]
+        par['calibrations']['darkframe']['exprng'] = [0, None]
+        par['scienceframe']['exprng'] = [0, None]
+
+        par["calibrations"]["biasframe"]["process"]["combine"] = "median"
+        par["calibrations"]["darkframe"]["process"]["combine"] = "median"
+
+        # alignement boxes are usually saturated
+        par["calibrations"]["flatfield"]["saturated_slits"] = "mask"
+        par["calibrations"]
+
+
+        return par
+
+
+
+
+
+
 
 
 
@@ -705,7 +741,7 @@ def check_files_are_pixelflat(fitstbl):
     object_names = fitstbl['target']
     grating = fitstbl['dispname']
     # UPDATED: Simplified logic
-    mask = [ ("flat" in name.lower() and disp.lower()!="open" and "arc" not in name.lower()) for name, disp in zip(object_names, grating)]
+    mask = [ ("flat" in name.lower() and "arc" not in name.lower()) for name, disp in zip(object_names, grating)]
     return np.array(mask)
 
 def check_files_are_illumflat(fitstbl):
@@ -715,8 +751,9 @@ def check_files_are_illumflat(fitstbl):
     """
     object_names = fitstbl['target']
     grating = fitstbl['dispname']
+    mask = fitstbl['decker']
     # UPDATED: Simplified logic
-    mask = [ ("flat" in name.lower() and disp.lower()=="open" and "arc" not in name.lower()) for name, disp in zip(object_names, grating)]
+    mask = [ ("flat" in name.lower() and "arc" not in name.lower()) for name, disp, decker in zip(object_names, grating, mask)]
     return np.array(mask)
 
 def ldss3_read_1chip(hdu,chipno):
