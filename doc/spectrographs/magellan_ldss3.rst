@@ -154,5 +154,23 @@ Known limitations
 
 - Only 1x1 binning has been tested.  PypeIt issues a warning for any other
   binning; check the data and overscan sections carefully if you see it.
-- The bad-pixel mask covers amplifier 1 only.  The amplifier-2 bad columns still
-  need to be measured on the assembled frame.
+
+- The detector carries about a dozen narrow bad-column groups, which are masked
+  by default.  A slit whose edge happens to fall on one of them cannot be
+  traced and will be dropped.  If you are missing a slit you expect, check its
+  edges against the ranges in
+  :func:`~pypeit.spectrographs.magellan_ldss3.MagellanLDSS3Spectrograph.bpm`;
+  removing the offending range recovers the slit, at the cost of leaving bad
+  columns in its spectrum.
+
+- The VPH-All wavelength solution is extrapolated blueward of ~3890 |AA|
+  (roughly the first 740 pixels).  No arc line is detectable there, and the
+  grism has no throughput, so science frames carry no signal in that range
+  either.
+
+- Narrow slitlets can be poorly calibrated in wavelength.  In multi-slit data we
+  find that slitlets of ~30 pixels give 50--60 arc-line identifications and a
+  wavelength fit RMS of 0.15--0.45 pixels, while slitlets of ~27 pixels can drop
+  to 10--30 identifications and an unreliable dispersion.  Check the ``dWave``
+  and ``Nlin`` columns of ``pypeit_chk_wavecalib`` before trusting a slit, and
+  use :ref:`pypeit_identify` on the ones that look wrong.
