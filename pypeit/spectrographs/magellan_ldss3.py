@@ -15,7 +15,6 @@ from pathlib import Path
 
 import numpy as np
 from astropy.time import Time
-from astropy.io import fits
 
 from pypeit import log
 from pypeit import PypeItError
