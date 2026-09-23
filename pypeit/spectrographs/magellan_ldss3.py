@@ -41,8 +41,14 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
 
     # Nominal amplifier properties, used when the raw headers are unavailable
     # (e.g., when building the documentation).  The true values are read from
-    # the EGAIN/ENOISE cards of each amplifier file; they depend on the readout
-    # speed (the SPEED header card).
+    # the EGAIN/ENOISE cards of each amplifier file.
+    #
+    # NOTE: the published read noise for LDSS3-C is 4.4/5.3 e- (Slow), 7.0/7.2
+    # (Fast) and ~10/~10 (Turbo) for amplifiers 1 and 2.  Every frame we have
+    # seen carries SPEED='Fast' but ENOISE=4.67/5.06, which are the Slow values.
+    # The header therefore appears not to track the readout mode.  We use the
+    # header values, since they are per-frame, but if your noise model looks
+    # optimistic this is the first thing to check.
     nominal_gain = np.array([1.65, 1.47])
     nominal_ronoise = np.array([4.67, 5.06])
 
@@ -201,19 +207,25 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
                             ysize           = 1.,
                             platescale      = 0.189,
                             darkcurr        = 25.0,
-                            # The CCD full well is ~205000 e-, but the ADC
-                            # clips at 65535 ADU, which is well below it: at a
-                            # gain of 1.65 that is 108133 e-.  The ADC therefore
-                            # sets the usable ceiling, and a saturation level
-                            # taken from the full well would never flag anything.
-                            # The threshold is compared in electrons, against a
-                            # single scalar, while the two amplifiers have
-                            # different gains.  Use the higher gain: that puts
-                            # the limit at 85% of the ADC range on amplifier 1
-                            # and 95% on amplifier 2, so hard saturation is
-                            # caught on both without discarding good pixels.
-                            saturation      = 65535. * float(np.max(gain)),
-                            nonlinear       = 0.85,
+                            # LDSS3-C has a full well of ~205000 e- (10%
+                            # non-linear) and stays within 1% of linear below
+                            # ~175000 e-.  Both are out of reach: the ADC is
+                            # 16-bit, so no pixel can record more than 65535
+                            # ADU, which is 108133 e- at a gain of 1.65 and
+                            # 96336 e- at 1.47.  The ADC therefore sets the
+                            # ceiling, and the response is linear right up to
+                            # it -- a saturation level taken from the full well
+                            # would never flag anything at all.
+                            #
+                            # The threshold is a single scalar compared in
+                            # electrons, while the two amplifiers have different
+                            # gains, so it has to be low enough to catch the
+                            # amplifier with the *smaller* gain.  Combined with
+                            # nonlinear just under 1, this flags at 99% of the
+                            # ADC range on the low-gain amplifier and 88% on the
+                            # high-gain one.
+                            saturation      = 65535. * float(np.min(gain)),
+                            nonlinear       = 0.99,
                             mincounts       = -1e10,
                             numamplifiers   = len(gain),
                             gain            = np.atleast_1d(gain),
