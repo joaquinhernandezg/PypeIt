@@ -201,7 +201,18 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
                             ysize           = 1.,
                             platescale      = 0.189,
                             darkcurr        = 25.0,
-                            saturation      = 205000.,
+                            # The CCD full well is ~205000 e-, but the ADC
+                            # clips at 65535 ADU, which is well below it: at a
+                            # gain of 1.65 that is 108133 e-.  The ADC therefore
+                            # sets the usable ceiling, and a saturation level
+                            # taken from the full well would never flag anything.
+                            # The threshold is compared in electrons, against a
+                            # single scalar, while the two amplifiers have
+                            # different gains.  Use the higher gain: that puts
+                            # the limit at 85% of the ADC range on amplifier 1
+                            # and 95% on amplifier 2, so hard saturation is
+                            # caught on both without discarding good pixels.
+                            saturation      = 65535. * float(np.max(gain)),
                             nonlinear       = 0.85,
                             mincounts       = -1e10,
                             numamplifiers   = len(gain),
