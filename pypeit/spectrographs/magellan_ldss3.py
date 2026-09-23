@@ -43,14 +43,22 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
     # (e.g., when building the documentation).  The true values are read from
     # the EGAIN/ENOISE cards of each amplifier file.
     #
-    # NOTE: the published read noise for LDSS3-C is 4.4/5.3 e- (Slow), 7.0/7.2
-    # (Fast) and ~10/~10 (Turbo) for amplifiers 1 and 2.  Every frame we have
-    # seen carries SPEED='Fast' but ENOISE=4.67/5.06, which are the Slow values.
-    # The header therefore appears not to track the readout mode.  We use the
-    # header values, since they are per-frame, but if your noise model looks
-    # optimistic this is the first thing to check.
     nominal_gain = np.array([1.65, 1.47])
-    nominal_ronoise = np.array([4.67, 5.06])
+    nominal_ronoise = np.array([7.0, 7.2])
+
+    # Published read noise for LDSS3-C, in e-, for amplifiers 1 and 2 in each
+    # readout mode.
+    #
+    # The ENOISE header card is *not* reliable: every frame we have seen carries
+    # SPEED='Fast' but ENOISE=4.67/5.06, which are the Slow values.  Measuring
+    # the read noise directly from differences of bias pairs gives 6.5-6.8 e- on
+    # amplifier 1 and 6.4-7.1 e- on amplifier 2, across data taken in 2018, 2019
+    # and 2022 -- consistent with the published Fast values and 27-45% above
+    # what ENOISE claims.  Using ENOISE would understate the read-noise term of
+    # the variance by roughly a factor of two.  EGAIN, by contrast, checks out:
+    # a photon-transfer measurement on flat pairs gives 1.60 +- 0.48 and
+    # 1.24 +- 0.32 e-/ADU against header values of 1.65 and 1.47.
+    ronoise_by_speed = {'slow': (4.4, 5.3), 'fast': (7.0, 7.2), 'turbo': (10.0, 10.0)}
 
     # Matches an LDSS3 raw filename of the form ``<stem>c<amp>.fits[.gz]``.  The
     # amplifier index is anchored immediately before the extension so that a
@@ -192,8 +200,23 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
             # the header values over the nominal ones.
             gain = np.array([float(h.get('EGAIN', self.nominal_gain[i]))
                              for i, h in enumerate(amp_headers)])
-            ronoise = np.array([float(h.get('ENOISE', self.nominal_ronoise[i]))
-                                for i, h in enumerate(amp_headers)])
+            # Take the read noise from the published table, keyed on the
+            # readout mode, rather than from the unreliable ENOISE card.
+            ronoise = []
+            for i, h in enumerate(amp_headers):
+                iamp = int(h.get('OPAMP', i + 1)) - 1
+                speed = str(h.get('SPEED', '')).strip().lower()
+                table = self.ronoise_by_speed.get(speed)
+                if table is not None and 0 <= iamp < len(table):
+                    ronoise.append(float(table[iamp]))
+                else:
+                    fallback = float(h.get('ENOISE', self.nominal_ronoise[min(i, 1)]))
+                    log.warning(f'Unrecognised LDSS3 readout mode {h.get("SPEED")!r}; '
+                                f'falling back on the ENOISE card ({fallback} e-), '
+                                'which is known to report the Slow-mode value '
+                                'regardless of the mode actually used.')
+                    ronoise.append(fallback)
+            ronoise = np.array(ronoise)
 
         detector_dict = dict(
                             binning         = binning,
