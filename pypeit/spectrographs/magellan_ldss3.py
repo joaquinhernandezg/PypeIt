@@ -686,7 +686,7 @@ class MagellanLDSS3Spectrograph(spectrograph.Spectrograph):
         # of amplifiers 1 and 2.
         for c1, c2 in [(0, 11), (443, 443), (608, 608), (1413, 1413), (1492, 1494),
                        (1549, 1551), (1602, 1606), (1635, 1640), (1688, 1690),
-                       (1695, 1695), (1999, 2000), (2036, 2047)]:
+                       (1695, 1695), (1999, 2000), (2034, 2047)]:
             bpm_img[:, c1 // binspat:c2 // binspat + 1] = 1
 
         return bpm_img
